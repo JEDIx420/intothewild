@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#faf9f6">
+  <meta name="description" content="A little journey, without an end. Wander a changing wilderness, meet its curious inhabitants, and stop whenever you please.">
+  <title>Into the Wild — a little journey</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="journey" aria-label="Into the Wild">
+    <header class="masthead">
+      <div class="masthead-tools">
+        <button class="icon-button" id="sound" type="button" aria-label="Turn on sound" aria-pressed="false" title="Sound · M">
+          <svg class="sound-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path class="sound-waves" d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/><path class="sound-mute" d="m16 9 5 6m0-6-5 6"/></svg>
+          <span class="sr-only" id="sound-label">Sound off</span>
+        </button>
+        <button class="icon-button" id="journal-open" type="button" aria-label="Open your field notes" aria-haspopup="dialog" title="Field notes · J">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4.5h13a1 1 0 0 1 1 1V20H6a2 2 0 0 1-2-2V6a1.5 1.5 0 0 1 1-1.5Z"/><path d="M7 4.5V17m-3 1a2 2 0 0 1 2-2h13M11 8h4m-4 4h4"/></svg>
+        </button>
+      </div>
+      <p class="eyebrow">A little journey, without an end</p>
+      <h1>Into the Wild<span class="title-dot" aria-hidden="true">.</span></h1>
+      <p class="journey-note" id="journey-note">There is nowhere you need to be.</p>
+    </header>
+
+    <section class="landscape" aria-label="Your journey through the wilderness">
+      <div class="scene-meta">
+        <span class="biome-name" id="biome-label">The Mosswood</span>
+        <div class="world-clock" aria-label="Season and time of day">
+          <span id="season-label">Spring</span><span class="meta-divider" aria-hidden="true">·</span><span id="time-label">Early morning</span>
+        </div>
+      </div>
+      <div class="canvas-wrap">
+        <canvas id="c" width="480" height="340" aria-label="An endless pixel-art wilderness. Use the Walk, Snack and Sleep buttons below to guide your traveller.">Your browser needs canvas support to show the wilderness.</canvas>
+        <div id="sleep-overlay" aria-hidden="true"></div>
+      </div>
+      <div class="scene-foot">
+        <span id="distance-label">The first few steps</span>
+        <span class="quiet-mark" aria-hidden="true"><svg viewBox="0 0 40 14" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"><path d="M1 12h10l5-8 5 8h18M13 9l3-5 3 5M25 12l4-6 4 6"/></svg></span>
+      </div>
+    </section>
+
+    <footer class="controls">
+      <div class="actions" role="group" aria-label="Journey controls">
+        <button class="action action-walk" id="walk" type="button" aria-pressed="false" title="Walk or pause · Space">
+          <svg class="walk-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="play-mark" d="m9 5 10 7-10 7V5Z"/><path class="pause-mark" d="M9 5v14m6-14v14"/></svg>
+          <span id="walk-label">Begin wandering</span>
+        </button>
+        <button class="action" id="snack" type="button" title="Stop for a snack · E">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 10h12v5a5 5 0 0 1-5 5h-2a5 5 0 0 1-5-5v-5Zm12 1h1a3 3 0 1 1 0 6h-1M4 21h15M8 3v3m4-4v4m4-3v3"/></svg>
+          <span>Snack</span>
+        </button>
+        <button class="action" id="sleep" type="button" title="Settle down to sleep · R">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.5 15.5A8.5 8.5 0 0 1 8.5 4.5a8.5 8.5 0 1 0 11 11Z"/><path d="M17 3v4m-2-2h4m1 4v2m-1-1h2"/></svg>
+          <span>Sleep</span>
+        </button>
+      </div>
+      <p class="status" id="status" role="status" aria-live="polite" aria-atomic="true">Take the trail. See what finds you.</p>
+      <p class="keyboard-hint" aria-hidden="true"><kbd>Space</kbd> wander <span>·</span> <kbd>E</kbd> snack <span>·</span> <kbd>R</kbd> sleep</p>
+    </footer>
+  </main>
+
+  <dialog id="journal" aria-labelledby="journal-title">
+    <header class="journal-header">
+      <div><p class="eyebrow">Collected along the way</p><h2 id="journal-title">Field notes</h2></div>
+      <button class="icon-button" id="journal-close" type="button" aria-label="Close field notes" title="Close · Escape" autofocus><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+    </header>
+    <section class="journal-section" aria-labelledby="sightings-heading">
+      <h3 id="sightings-heading">Little encounters</h3>
+      <div class="sightings" id="sightings"><p class="journal-empty">A fresh page. The forest will fill it.</p></div>
+    </section>
+    <section class="journal-section how-to" aria-labelledby="how-to-heading">
+      <h3 id="how-to-heading">A slower kind of adventure</h3>
+      <p>Follow the trail, stop for a snack, or sleep beneath the sky. The wilderness changes with the hour and season. Sometimes, sitting quietly is the best way to meet its inhabitants.</p>
+      <dl class="key-guide"><div><dt><kbd>Space</kbd></dt><dd>Walk or pause</dd></div><div><dt><kbd>E</kbd></dt><dd>Have a snack</dd></div><div><dt><kbd>R</kbd></dt><dd>Sleep</dd></div><div><dt><kbd>M</kbd></dt><dd>Sound on or off</dd></div><div><dt><kbd>J</kbd></dt><dd>Open field notes</dd></div></dl>
+    </section>
+    <footer class="journal-credits"><p>Made in the spirit of <a href="https://github.com/amirmushichge/pixel-plays" target="_blank" rel="noopener noreferrer">Pixel Plays</a> by Amir Mushich. Renderer code adapted under the MIT licence.</p><p>Forest ambience and music are original sounds generated in your browser.</p></footer>
+  </dialog>
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
