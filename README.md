@@ -6,6 +6,8 @@
 
 Walk a winding trail through woods, streams, meadows, mountain passes and enchanted groves. Meet the wildlife, pause for a warm drink, or unroll your bed and wake in another morning. There is nowhere you need to be.
 
+![A traveller resting beside Silverbrook in Into the Wild](docs/into-the-wild.jpg)
+
 ## Play
 
 | Control | Action |
