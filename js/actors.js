@@ -207,22 +207,33 @@ export function drawTraveller(r, options = {}) {
   else standingTraveller(r, p);
 }
 
-function deer(r, P, scale, t, seed, magical, resting) {
+function walkingLegs(r, P, scale, motion, hips, width, height, color, lower, hoof, stride) {
+  const moving = Math.min(1, motion.speed / .55);
+  for (const forward of hips) for (const side of [-width, width]) {
+    // Opposite diagonal feet move together in a gentle trot. During the stance
+    // half the foot moves back relative to the body, then lifts on its return.
+    const phase = motion.gait + ((forward > 0) === (side > 0) ? Math.PI : 0);
+    const swing = Math.sin(phase) * stride * moving;
+    const lift = Math.max(0, Math.cos(phase)) * height * .2 * moving;
+    const foot = forward + swing;
+    const knee = forward + swing * .48 + (forward > 0 ? -.045 : .06);
+    bone(r, P(forward, side, height), P(knee, side, height * .51 + lift * .4), .073 * scale, .047 * scale, color);
+    bone(r, P(knee, side, height * .51 + lift * .4), P(foot, side, .065 + lift), .043 * scale, .028 * scale, lower);
+    bone(r, P(foot, side, .065 + lift), P(foot + .09, side, .04 + lift), .052 * scale, .042 * scale, hoof);
+  }
+}
+
+function deer(r, P, scale, t, seed, magical, resting, motion) {
   const body = magical ? C.stag : C.deer;
   const light = magical ? C.stagLight : C.deerLight;
-  const up = magical || resting || Math.sin(t * .19 + seed) > -.15;
+  const graze = motion.graze * (magical ? .25 : 1);
+  const up = graze < .5;
   const breath = Math.sin(t * 1.7 + seed) * .012;
-  // Four thin, articulated legs support a long body; the belly stays clear.
-  for (const forward of [-.43, .42]) for (const side of [-.16, .16]) {
-    const kneeA = forward + (forward > 0 ? -.055 : .085);
-    bone(r, P(forward, side, .91), P(kneeA, side, .46), .075 * scale, .05 * scale, body);
-    bone(r, P(kneeA, side, .46), P(forward + .035, side, .085), .045 * scale, .028 * scale, body);
-    bone(r, P(forward + .035, side, .085), P(forward + .1, side, .045), .052 * scale, .045 * scale, C.hoof);
-  }
+  walkingLegs(r, P, scale, motion, [-.43, .42], .16, .91, body, body, C.hoof, .28);
   bone(r, P(-.4, 0, 1.02 + breath), P(.34, 0, 1.07 + breath), .265 * scale, .29 * scale, body);
   bone(r, P(-.25, -.1, .96), P(.33, -.1, .99), .19 * scale, .2 * scale, light);
-  const headA = up ? .64 : 1.04;
-  const headZ = up ? 1.69 : .48;
+  const headA = .64 + .4 * graze;
+  const headZ = 1.69 - 1.21 * graze + Math.sin(t * .8 + seed) * .025 * (1 - graze);
   bone(r, P(.4, 0, 1.11), P(headA - .07, 0, headZ - .14), .18 * scale, .12 * scale, body);
   bone(r, P(headA - .09, 0, headZ), P(headA + .22, 0, headZ - .075), .14 * scale, .08 * scale, light);
   ball(r, P(headA + .245, 0, headZ - .075), .05 * scale, C.dark);
@@ -257,44 +268,41 @@ function deer(r, P, scale, t, seed, magical, resting) {
   }
 }
 
-function fox(r, P, scale, t, seed, resting) {
+function fox(r, P, scale, t, seed, resting, motion) {
   const breathe = Math.sin(t * 2.3 + seed) * .009;
-  for (const forward of [-.34, .35]) for (const side of [-.13, .13]) {
-    const knee = P(forward + .04, side, .24);
-    bone(r, P(forward, side, .48), knee, .065 * scale, .045 * scale, C.fox);
-    bone(r, knee, P(forward + .05, side, .045), .043 * scale, .028 * scale, C.foxDark);
-    ball(r, P(forward + .1, side, .045), .055 * scale, C.dark);
-  }
+  walkingLegs(r, P, scale, motion, [-.34, .35], .13, .48, C.fox, C.foxDark, C.dark, .2);
   bone(r, P(-.35, 0, .52 + breathe), P(.3, 0, .53 + breathe), .2 * scale, .215 * scale, C.fox);
   bone(r, P(.22, 0, .46), P(.46, 0, .66), .16 * scale, .13 * scale, C.cream);
-  const turn = Math.sin(t * .5 + seed) * .035;
-  ball(r, P(.46, turn, .73), .18 * scale, C.foxLight);
-  bone(r, P(.49, turn, .72), P(.82, turn, .6), .115 * scale, .035 * scale, C.foxLight);
-  ball(r, P(.83, turn, .605), .039 * scale, C.dark);
-  bone(r, P(.58, turn, .63), P(.78, turn, .575), .07 * scale, .025 * scale, C.cream);
+  const turn = Math.sin(t * .9 + seed) * (motion.speed < .08 ? .13 : .025);
+  const dip = motion.graze * .28;
+  ball(r, P(.46, turn, .73 - dip), .18 * scale, C.foxLight);
+  bone(r, P(.49, turn, .72 - dip), P(.82, turn, .6 - dip), .115 * scale, .035 * scale, C.foxLight);
+  ball(r, P(.83, turn, .605 - dip), .039 * scale, C.dark);
+  bone(r, P(.58, turn, .63 - dip), P(.78, turn, .575 - dip), .07 * scale, .025 * scale, C.cream);
   for (const side of [-1, 1]) {
-    bone(r, P(.41, side * .11, .82), P(.36, side * .16, 1.05), .075 * scale, .012 * scale, C.foxDark);
-    bone(r, P(.43, side * .115, .84), P(.38, side * .15, 1.01), .047 * scale, .009 * scale, C.foxLight);
-    ball(r, P(.565, side * .145 + turn, .765), .025 * scale, C.dark);
+    bone(r, P(.41, side * .11 + turn, .82 - dip), P(.36, side * .16 + turn, 1.05 - dip), .075 * scale, .012 * scale, C.foxDark);
+    bone(r, P(.43, side * .115 + turn, .84 - dip), P(.38, side * .15 + turn, 1.01 - dip), .047 * scale, .009 * scale, C.foxLight);
+    ball(r, P(.565, side * .145 + turn, .765 - dip), .025 * scale, C.dark);
   }
-  const sway = Math.sin(t * (resting ? 1.4 : .7) + seed) * .15;
+  const sway = Math.sin(t * (motion.speed > .1 ? 2.2 : 1.1) + seed) * .22;
   bone(r, P(-.45, 0, .55), P(-.87, sway, .41), .13 * scale, .17 * scale, C.fox);
   bone(r, P(-.87, sway, .41), P(-1.13, sway * 1.4, .49), .17 * scale, .08 * scale, C.foxLight);
   bone(r, P(-1.11, sway * 1.4, .49), P(-1.32, sway * 1.6, .56), .085 * scale, .014 * scale, C.cream);
 }
 
-function rabbit(r, P, scale, t, seed) {
+function rabbit(r, P, scale, t, seed, motion) {
   const sniff = Math.sin(t * 5 + seed) * .013;
+  const tuck = Math.min(1, motion.hop / .24);
   bone(r, P(-.15, 0, .25), P(.13, 0, .31), .225 * scale, .18 * scale, C.rabbit);
   for (const side of [-1, 1]) {
     ball(r, P(-.15, side * .16, .17), .15 * scale, C.rabbit);
-    bone(r, P(-.1, side * .18, .065), P(.1, side * .18, .055), .065 * scale, .05 * scale, C.rabbitLight);
-    bone(r, P(.24, side * .1, .22), P(.27, side * .1, .05), .055 * scale, .035 * scale, C.rabbitLight);
+    bone(r, P(-.1 - tuck * .13, side * .18, .065 + tuck * .05), P(.1 - tuck * .16, side * .18, .055 + tuck * .04), .065 * scale, .05 * scale, C.rabbitLight);
+    bone(r, P(.24, side * .1, .22), P(.27 + tuck * .09, side * .1, .05 + tuck * .08), .055 * scale, .035 * scale, C.rabbitLight);
   }
   ball(r, P(.28 + sniff, 0, .42), .16 * scale, C.rabbitLight);
   ball(r, P(.43 + sniff, 0, .39), .025 * scale, C.ear);
   for (const side of [-1, 1]) {
-    const twitch = Math.pow(Math.max(0, Math.sin(t * .7 + seed + side)), 8) * .15;
+    const twitch = Math.pow(Math.max(0, Math.sin(t * .7 + seed + side)), 8) * .15 - tuck * .25;
     bone(r, P(.23, side * .065, .5), P(.13 + twitch, side * .1, .91), .052 * scale, .022 * scale, C.rabbit);
     bone(r, P(.24, side * .068, .56), P(.145 + twitch, side * .1, .86), .021 * scale, .011 * scale, C.ear);
     ball(r, P(.34 + sniff, side * .125, .47), .025 * scale, C.dark);
@@ -302,16 +310,18 @@ function rabbit(r, P, scale, t, seed) {
   ball(r, P(-.36, 0, .29), .085 * scale, C.cream);
 }
 
-function bird(r, P, scale, t, seed) {
-  const twitch = Math.max(0, Math.sin(t * .9 + seed) - .93) * 8;
+function bird(r, P, scale, t, seed, motion) {
+  const flying = motion.hop > .03;
+  const twitch = flying ? .27 + Math.sin(t * 24 + seed) * .24 : Math.max(0, Math.sin(t * .9 + seed) - .93) * 3;
+  const peck = motion.graze * Math.pow(Math.max(0, Math.sin(t * 7 + seed)), 2) * .15;
   bone(r, P(-.09, 0, .22), P(.1, 0, .31), .13 * scale, .115 * scale, C.bird);
-  ball(r, P(.17, 0, .4), .105 * scale, C.bird);
+  ball(r, P(.17, 0, .4 - peck), .105 * scale, C.bird);
   ball(r, P(.14, -.065, .29), .085 * scale, C.birdChest);
-  bone(r, P(.24, 0, .4), P(.35, 0, .39), .032 * scale, .009 * scale, C.hatRim);
+  bone(r, P(.24, 0, .4 - peck), P(.35, 0, .39 - peck), .032 * scale, .009 * scale, C.hatRim);
   for (const side of [-1, 1]) {
-    bone(r, P(0, side * .09, .29), P(-.18, side * (.13 + twitch), .2 + twitch * .25), .055 * scale, .018 * scale, C.birdWing);
+    bone(r, P(0, side * .09, .29), P(-.1, side * (flying ? .42 : .13 + twitch), .25 + twitch), .065 * scale, .023 * scale, C.birdWing);
     bone(r, P(0, side * .055, .12), P(.04, side * .065, .025), .016 * scale, .012 * scale, C.dark);
-    ball(r, P(.205, side * .08, .43), .018 * scale, C.dark);
+    ball(r, P(.205, side * .08, .43 - peck), .018 * scale, C.dark);
   }
   bone(r, P(-.17, 0, .21), P(-.4, 0, .28), .058 * scale, .014 * scale, C.birdWing);
 }
@@ -338,16 +348,19 @@ export function drawCreature(r, options = {}) {
   const scale = Math.max(.2, Math.min(3, finite(options.scale, 1)));
   const kind = options.kind || 'deer';
   const resting = !!options.resting;
+  const source = options.motion || {};
+  const motion = { speed: Math.max(0, finite(source.speed)), gait: finite(source.gait),
+    hop: Math.max(0, finite(source.hop)), graze: Math.max(0, Math.min(1, finite(source.graze))) };
   // Mostly profile angles preserve the small silhouettes. The seed makes repeat
   // encounters recognisable without synchronising every head or tail movement.
-  const yaw = -.45 - ((seed % 1009) / 1009) * 1.1;
-  const P = localFrame(x, y, z, yaw, scale);
+  const yaw = finite(source.yaw, -.45 - ((seed % 1009) / 1009) * 1.1);
+  const P = localFrame(x, y, z + motion.hop * scale, yaw, scale);
   r.shadow(x, y, z,
     (kind === 'deer' || kind === 'stag' ? .58 : kind === 'bird' ? .18 : .3) * scale, 1);
   const phaseSeed = (seed % 997) * .071;
-  if (kind === 'fox') fox(r, P, scale, t, phaseSeed, resting);
-  else if (kind === 'rabbit') rabbit(r, P, scale, t, phaseSeed);
-  else if (kind === 'bird') bird(r, P, scale, t, phaseSeed);
+  if (kind === 'fox') fox(r, P, scale, t, phaseSeed, resting, motion);
+  else if (kind === 'rabbit') rabbit(r, P, scale, t, phaseSeed, motion);
+  else if (kind === 'bird') bird(r, P, scale, t, phaseSeed, motion);
   else if (kind === 'spirit') spirit(r, P, scale, t, phaseSeed);
-  else deer(r, P, scale, t, seed, kind === 'stag', resting);
+  else deer(r, P, scale, t, seed, kind === 'stag', resting, motion);
 }

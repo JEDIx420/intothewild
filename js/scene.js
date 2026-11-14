@@ -1,6 +1,7 @@
 import { Raster, rgb, hash, noise, lerp, clamp, SIN, COS, R2, bayer } from './pixel.js';
 import { pathAt, terrainAt, biomeAt, riverAt, environment, TrailWorld } from './world.js';
 import { drawTraveller, drawCreature } from './actors.js';
+import { sampleWildlife } from './wildlife.js';
 
 const PAPER = rgb(250, 249, 246);
 const LEAVES = [
@@ -15,16 +16,19 @@ const SPECIES = { fox: 'Red fox', deer: 'Woodland deer', rabbit: 'Wild rabbit', 
 
 export class ForestScene {
   constructor(canvas, seed) {
-    this.r = new Raster(480, 340, 12, canvas);
-    this.r.oy = 218;
+    // A tighter panorama removes the old empty sky margins. CSS covers the
+    // available stage, keeping the traveller large on desktop and portrait.
+    this.r = new Raster(480, 300, 12, canvas);
+    this.r.oy = 184;
     this.seed = seed; this.world = new TrailWorld(seed);
     this.sprites = new Map(); this.active = []; this.visibleAnimals = [];
     this.grid = new Float32Array(97 * 97); this.gridKey = '';
     this.heightRows = 97; this.step = .5;
     this.reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    this.inverseX = new Float32Array(480 * 340); this.inverseY = new Float32Array(480 * 340);
-    for (let y = 0; y < 340; y++) for (let x = 0; x < 480; x++) {
-      const u = (x + .5 - this.r.ox) / 12, v = (y + .5 - this.r.oy) / (12 * SIN), i = y * 480 + x;
+    const { width, height, scale } = this.r;
+    this.inverseX = new Float32Array(width * height); this.inverseY = new Float32Array(width * height);
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      const u = (x + .5 - this.r.ox) / scale, v = (y + .5 - this.r.oy) / (scale * SIN), i = y * width + x;
       this.inverseX[i] = (u + v) / R2; this.inverseY[i] = (v - u) / R2;
     }
     this.shades = new Uint32Array(256 * 3);
@@ -233,7 +237,7 @@ export class ForestScene {
       const count = snow ? 65 : leaf ? 16 : 55;
       for (let k = 0; k < count; k++) {
         const sx = 35 + ((hash(k, 28) * 405 + t * (snow ? 4 : leaf ? 7 : 15)) % 405);
-        const sy = 60 + ((hash(k, 29) * 250 + t * (snow ? 10 : leaf ? 15 : 130)) % 250);
+        const sy = 30 + ((hash(k, 29) * (r.height - 40) + t * (snow ? 10 : leaf ? 15 : 130)) % (r.height - 40));
         const ix = sx | 0, iy = sy | 0, i = iy * r.width + ix;
         if (r.depth[i] < -1e8) continue;
         r.pixels[i] = snow ? rgb(238, 241, 233) : leaf ? rgb(185, 130, 68) : rgb(162, 183, 180);
@@ -260,15 +264,18 @@ export class ForestScene {
     this.world.update(state.distance);
     const active = this.active; active.length = 0;
     for (const e of this.world.entities) {
-      const relative = e.s - state.distance;
+      const motion = e.kind === 'animal' ? sampleWildlife(e, state.elapsed, state.seed) : null;
+      const s = motion ? motion.s : e.s;
+      const relative = s - state.distance;
       if (Math.abs(relative) > 24) continue;
-      const x = pathAt(e.s, state.seed) + e.side, y = -e.s, dx = x - r.cameraX, dy = y - r.cameraY;
+      const x = motion ? motion.x : pathAt(s, state.seed) + e.side;
+      const y = -s, dx = x - r.cameraX, dy = y - r.cameraY;
       const edge = Math.pow(Math.pow(Math.abs(dx) / 15, 4) + Math.pow(Math.abs(dy) / 13.6, 4), .25);
       if (edge > .98) continue;
-      const z = this.surface(e.s, x);
+      const z = this.surface(s, x);
       if (e.kind === 'tree') r.shadow(x + 2.1, y + .5, z, (e.scale || 1) * 1.7);
       if (e.kind === 'rock') r.shadow(x + .3, y, z, .6);
-      active.push({ e, x, y, z });
+      active.push({ e, x, y, z, motion });
     }
     r.shadow(r.cameraX + .5, r.cameraY, this.surface(state.distance, r.cameraX), .6);
     r.applyShadows();
@@ -283,19 +290,20 @@ export class ForestScene {
     const travellerGround = this.surface(state.distance, r.cameraX + (resting ? 1.12 : 0));
     const protectedPoint = r.project(r.cameraX + (resting ? 1.12 : 0), r.cameraY, travellerGround + (resting ? .6 : 1.2));
     r.cutaways = [{ x: protectedPoint.sx, y: protectedPoint.sy, d: protectedPoint.d, rx: resting ? 25 : 18, ry: resting ? 20 : 27 }];
+    for (const animal of active) {
+      if (!animal.motion || Math.abs(animal.motion.s - state.distance) > 9) continue;
+      const point = r.project(animal.x, animal.y, animal.z + .6 + animal.motion.hop);
+      r.cutaways.push({ x: point.sx, y: point.sy, d: point.d, rx: 15, ry: 15 });
+    }
     this.visibleAnimals.length = 0;
-    for (const { e, x, y, z } of active) {
+    for (const { e, x, y, z, motion } of active) {
       if (e.kind === 'tree') {
         const sprite = this.treeSprite(e.variant || 'oak', env.seasonIndex, Math.abs(e.seed | 0) % 3, e.scale || 1);
         const sway = this.reducedMotion ? 0 : Math.sin(Math.floor(state.elapsed * 8) / 8 * .8 + e.seed) * 1.1;
         r.blit(sprite, x, y, z, sway);
       } else if (e.kind === 'animal') {
-        const near = Math.abs(e.s - state.distance), kind = e.variant || 'deer';
-        const approach = state.mode === 'snack' && near < 8 ? clamp(state.modeTime / 5, 0, 1) * .8 : 0;
-        const ax = lerp(x, r.cameraX + Math.sign(e.side) * 1.8, approach);
-        const ay = y + (kind === 'bird' ? Math.sin(state.elapsed * .38 + e.seed) * .3 : Math.sin(state.elapsed * .23 + e.seed) * .13);
-        const az = this.surface(-ay, ax);
-        drawCreature(r, { x: ax, y: ay, z: az, time: state.elapsed, kind, seed: e.seed, scale: e.scale || 1, resting: state.mode === 'snack', night: env.night > .4 });
+        const near = Math.abs(motion.s - state.distance), kind = e.variant || 'deer';
+        drawCreature(r, { x, y, z, time: state.elapsed, kind, seed: e.seed, scale: e.scale || 1, motion, resting: state.mode === 'snack', night: env.night > .4 });
         if (near < 8) this.visibleAnimals.push({ id: e.id, kind, name: SPECIES[kind] || kind, distance: near });
       } else this.smallProp(e, x, y, z, env, state.elapsed);
     }

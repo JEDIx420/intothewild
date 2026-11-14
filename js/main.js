@@ -3,6 +3,7 @@ import { ForestScene } from './scene.js';
 import { ForestAudio } from './audio.js';
 
 const SAVE_KEY = 'into-the-wild.journey.v1';
+const SOUND_KEY = 'into-the-wild.sound.v2';
 const params = new URLSearchParams(location.search);
 const requestedSeed = params.get('seed');
 let stored = null;
@@ -10,6 +11,11 @@ try { stored = localStorage.getItem(SAVE_KEY); } catch { /* A journey also works
 const state = requestedSeed !== null && /^\d{1,10}$/.test(requestedSeed)
   ? createJourney(Number(requestedSeed) >>> 0)
   : stored ? restoreJourney(stored) : createJourney();
+// The old release silently defaulted to mute. Start the new score with the
+// first play gesture; remember an explicit mute independently of journey saves.
+let soundPreference = null;
+try { soundPreference = localStorage.getItem(SOUND_KEY); } catch { /* Optional storage. */ }
+state.sound = soundPreference !== 'off';
 // Coming back to the trail never starts walking or sound without a gesture.
 if (state.mode === 'walking') setActivity(state, 'paused');
 const canvas = document.getElementById('c');
@@ -52,14 +58,19 @@ async function unlockSound() {
   try {
     const started = await audio.start();
     soundUnlocked = started;
-    audio.setEnabled(started && !document.hidden);
+    audio.setEnabled(state.sound && started && !document.hidden);
     if (!started) status('Tap the sound button when you are ready to listen.', 4);
   } catch { soundUnlocked = false; audio.setEnabled(false); }
+  renderUI();
 }
 async function toggleSound() {
-  state.sound = !state.sound;
-  if (state.sound) await unlockSound();
-  else { audio.setEnabled(false); soundUnlocked = false; }
+  if (state.sound && !soundUnlocked) await unlockSound();
+  else {
+    state.sound = !state.sound;
+    if (state.sound) await unlockSound();
+    else audio.setEnabled(false);
+  }
+  try { localStorage.setItem(SOUND_KEY, state.sound ? 'on' : 'off'); } catch { /* Optional storage. */ }
   renderUI(); save();
 }
 function renderNotes() {
@@ -88,9 +99,11 @@ function renderUI() {
   ui['walk-label'].textContent = walking ? 'Pause a moment' : state.distance > .1 ? 'Keep wandering' : 'Begin wandering';
   ui.snack.setAttribute('aria-pressed', String(state.mode === 'snack'));
   ui.sleep.setAttribute('aria-pressed', String(state.mode === 'sleep'));
-  ui.sound.setAttribute('aria-pressed', String(state.sound));
-  ui.sound.setAttribute('aria-label', state.sound ? 'Turn off sound' : 'Turn on sound');
-  ui['sound-label'].textContent = state.sound ? 'Sound on' : 'Sound off';
+  const audible = state.sound && soundUnlocked;
+  ui.sound.setAttribute('aria-pressed', String(audible));
+  ui.sound.setAttribute('aria-label', audible ? 'Turn off sound' : 'Turn on sound');
+  ui.sound.title = audible ? 'Music and forest sounds · M' : state.sound ? 'Sound starts with your first step. Tap to listen now.' : 'Turn on music and forest sounds · M';
+  ui['sound-label'].textContent = audible ? 'Sound on' : state.sound ? 'Sound on your first step' : 'Sound off';
   ui['biome-label'].textContent = env.biomeLabel;
   ui['season-label'].textContent = env.season[0].toUpperCase() + env.season.slice(1);
   const hours = Math.floor(env.hour), minutes = Math.floor((env.hour - hours) * 60);
@@ -162,9 +175,8 @@ function frame(now) {
       }
     }
   }
-  if (uiTimer > .25) {
-    renderUI(); audio.update(environmentNow, state.mode === 'walking' && !ui.journal.open); uiTimer = 0;
-  }
+  audio.update(environmentNow, state.mode === 'walking' && !ui.journal.open, state);
+  if (uiTimer > .25) { renderUI(); uiTimer = 0; }
   if (lastMode !== state.mode) {
     if (lastMode === 'sleep' && state.mode === 'paused') status('A new morning. A little further to wander.', 5);
     lastMode = state.mode; renderUI(); save();

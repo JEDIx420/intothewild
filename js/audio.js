@@ -1,4 +1,22 @@
-// Original, quiet procedural ambience. No samples, network requests or timers.
+import { riverAt } from './world.js';
+
+// Original, melodic forest score and grounded footsteps. No downloads or timers.
+const BEAT = 60 / 68;
+const CHORDS = [
+  [48, 55, 60, 64, 71], [45, 52, 57, 60, 67],
+  [41, 48, 53, 57, 64], [43, 50, 55, 59, 62],
+];
+const MELODIES = [
+  [72, null, 76, 74, 72, null, 67, 69],
+  [69, null, 72, null, 76, 74, 72, null],
+  [69, null, 67, 64, 65, null, 69, 72],
+  [71, null, 69, null, 67, 62, 67, null],
+  [76, null, 79, 76, 74, null, 72, null],
+  [72, null, 69, 67, 64, null, 69, null],
+  [65, null, 69, 72, 76, null, 72, 69],
+  [67, null, 71, null, 74, 71, 67, null],
+];
+const frequencyOf = note => 440 * 2 ** ((note - 69) / 12);
 // start() belongs in a user gesture; update() can be called by the game loop.
 export class ForestAudio {
   constructor() {
@@ -15,10 +33,14 @@ export class ForestAudio {
     this._persistent = [];
     this._voices = new Set();
     this._nextBird = 0;
-    this._nextNote = 0;
+    this._nextMusicTick = 0;
+    this._musicTick = 0;
+    this._music = null;
     this._nextStep = 0;
     this._lastAmbience = -Infinity;
-    this._lastNote = 0;
+    this._lastStepIndex = null;
+    this._walking = false;
+    this._stepSide = 1;
     this._disposed = false;
     this._starting = null;
   }
@@ -39,7 +61,7 @@ export class ForestAudio {
         this.context = new AudioContextClass({ latencyHint: 'interactive' });
         this._buildGraph();
       }
-      if (this.context.state === 'suspended') await this.context.resume();
+      if (this.context.state !== 'running' && this.context.state !== 'closed') await this.context.resume();
       this.setEnabled(this.enabled);
       return this.context.state === 'running';
     } catch {
@@ -48,16 +70,27 @@ export class ForestAudio {
   }
 
   setEnabled(value) {
-    this.enabled = Boolean(value);
+    const enabled = Boolean(value), changed = enabled !== this.enabled;
+    this.enabled = enabled;
     if (!this.context || !this._master || this._disposed) return;
     const now = this.context.currentTime;
     this._master.gain.cancelScheduledValues(now);
-    this._master.gain.setTargetAtTime(this.enabled ? 0.24 : 0, now, 0.15);
+    this._master.gain.setTargetAtTime(this.enabled ? 0.62 : 0, now, 0.1);
     if (this.enabled) {
       if (this.context.state === 'suspended') this.context.resume().catch(() => {});
-      // Resume into the forest first; musical notes arrive a little later.
-      this._nextBird = Math.max(this._nextBird, now + 1.8);
-      this._nextNote = Math.max(this._nextNote, now + 3.4);
+      if (changed) {
+        this._nextBird = now + 1.4;
+        this._nextMusicTick = now + 0.1;
+        this._musicTick = Math.ceil(this._musicTick / 8) * 8;
+        this._lastStepIndex = null;
+      }
+    } else if (changed) {
+      // Retire notes when hidden/muted; a return never catches up old beats.
+      for (const voice of this._voices) {
+        try { voice.source.stop(now + 0.25); } catch { /* Already ended. */ }
+      }
+      this._walking = false;
+      this._lastStepIndex = null;
     }
   }
 
@@ -65,8 +98,18 @@ export class ForestAudio {
     const ctx = this.context;
     this._master = ctx.createGain();
     this._master.gain.value = 0;
-    this._master.connect(ctx.destination);
-    this._persistent.push(this._master);
+    const limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = -14;
+    limiter.knee.value = 18;
+    limiter.ratio.value = 3;
+    limiter.attack.value = 0.008;
+    limiter.release.value = 0.25;
+    this._master.connect(limiter);
+    limiter.connect(ctx.destination);
+    this._music = ctx.createGain();
+    this._music.gain.value = 1;
+    this._music.connect(this._master);
+    this._persistent.push(this._master, limiter, this._music);
 
     this._noise = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * 3), ctx.sampleRate);
     const samples = this._noise.getChannelData(0);
@@ -76,7 +119,7 @@ export class ForestAudio {
       samples[i] = drift * 3.8 + (Math.random() * 2 - 1) * 0.13;
     }
 
-    const wind = this._noiseBed(0.042, 'lowpass', 620, 0.55, 0);
+    const wind = this._noiseBed(0.055, 'lowpass', 620, 0.55, 0);
     this._wind = wind.gain;
     this._windFilter = wind.filter;
     const water = this._noiseBed(0, 'bandpass', 1350, 0.35, 0.9);
@@ -114,7 +157,7 @@ export class ForestAudio {
 
     const now = ctx.currentTime;
     this._nextBird = now + 2;
-    this._nextNote = now + 3.5;
+    this._nextMusicTick = now + 0.1;
     this._nextStep = now;
   }
 
@@ -137,7 +180,7 @@ export class ForestAudio {
     return { gain, filter };
   }
 
-  update(scene = {}, walking = false) {
+  update(scene = {}, walking = false, journey = {}) {
     const ctx = this.context;
     if (!this.enabled || this._disposed || !ctx || ctx.state !== 'running') return;
     const now = ctx.currentTime;
@@ -153,9 +196,10 @@ export class ForestAudio {
 
     if (now - this._lastAmbience > 0.9) {
       this._lastAmbience = now;
-      this._wind.gain.setTargetAtTime(mountain ? 0.073 : rain ? 0.055 : 0.038, now, 2);
+      this._wind.gain.setTargetAtTime(mountain ? 0.075 : rain ? 0.065 : 0.045, now, 2);
       this._windFilter.frequency.setTargetAtTime(mountain ? 820 : 530, now, 2);
-      this._water.gain.setTargetAtTime(stream ? 0.071 : rain ? 0.047 : 0, now, 2);
+      this._water.gain.setTargetAtTime(stream ? 0.1 : rain ? 0.07 : 0, now, 2);
+      this._music.gain.setTargetAtTime(journey.mode === 'sleep' ? 0.6 : night > 0.5 ? 0.85 : 1, now, 1.5);
       this._insects.gain.setTargetAtTime(mountain ? 0 : night * 0.009, now, 2.5);
     }
 
@@ -166,28 +210,66 @@ export class ForestAudio {
         else this._chirp(now);
       }
     }
-    if (now >= this._nextNote) {
-      this._nextNote = now + 6.5 + Math.random() * 7;
-      const notes = night > 0.5 ? [55, 57, 60, 62, 64, 67] : [60, 62, 64, 67, 69, 72];
-      let note = notes[Math.floor(Math.random() * notes.length)];
-      if (note === this._lastNote) note = notes[(notes.indexOf(note) + 2) % notes.length];
-      this._lastNote = note;
-      const frequency = 440 * Math.pow(2, (note - 69) / 12);
-      this._tone({ frequency, at: now + 0.03, duration: 3.2, volume: 0.038, attack: 0.3, pan: (Math.random() - 0.5) * 0.65, reverb: true });
+    // A short lookahead preserves rhythm without queuing a long soundtrack.
+    if (this._nextMusicTick < now - 0.4) {
+      this._nextMusicTick = now + 0.04;
+      this._musicTick = Math.ceil(this._musicTick / 8) * 8;
     }
-    if (walking && now >= this._nextStep) {
-      this._nextStep = now + 0.5;
-      this._footstep(now);
-    } else if (!walking) {
+    while (this._nextMusicTick < now + 0.16) {
+      this._score(this._nextMusicTick, this._musicTick++, night);
+      this._nextMusicTick += BEAT / 2;
+    }
+    const distance = journey.distance;
+    if (walking) {
+      // Traveller plants a foot every PI of its distance * 6.1 gait.
+      const stepIndex = Number.isFinite(distance) ? Math.floor((distance * 6.1 - Math.PI / 2) / Math.PI) : null;
+      const contact = stepIndex === null ? now >= this._nextStep
+        : this._lastStepIndex !== null && stepIndex > this._lastStepIndex;
+      if (contact) {
+        const river = Number.isFinite(distance) ? riverAt(distance, journey.seed) : null;
+        const bridge = river && Math.abs(distance - river.center) < river.width / 2 + 0.55;
+        const surface = bridge ? 'wood' : scene.season === 'winter' ? 'snow' : mountain ? 'stone' : 'earth';
+        this._footstep(now, surface);
+        this._nextStep = now + 0.45;
+      }
+      this._lastStepIndex = stepIndex;
+    } else {
+      this._lastStepIndex = null;
       this._nextStep = now;
+    }
+    this._walking = walking;
+  }
+
+  _score(at, tick, night) {
+    const bar = Math.floor(tick / 8), slot = tick % 8;
+    const chord = CHORDS[bar % CHORDS.length];
+    if (slot === 0) {
+      // Warm, softly strummed harmony beneath an eight-bar original motif.
+      this._tone({ frequency: frequencyOf(chord[0]), at, duration: BEAT * 4.5, volume: 0.064, attack: 0.11, music: true });
+      for (let n = 1; n < chord.length; n++) {
+        this._tone({ frequency: frequencyOf(chord[n]), at: at + n * 0.035,
+          duration: BEAT * 4.7, volume: 0.027, attack: 0.28,
+          pan: (n - 2.5) * 0.13, reverb: true, music: true });
+      }
+    }
+    const note = MELODIES[bar % MELODIES.length][slot];
+    if (note === null || (night > 0.7 && slot === 3)) return;
+    this._tone({ frequency: frequencyOf(note - (night > 0.7 ? 12 : 0)), at,
+      duration: BEAT * 2.8, volume: slot === 0 ? 0.14 : 0.11,
+      attack: 0.012, pan: Math.sin(bar * 1.3 + slot) * 0.16,
+      reverb: true, music: true, type: 'triangle', cutoff: 2300 });
+    if (slot === 0 && bar % 4 === 0) {
+      this._tone({ frequency: frequencyOf(note + 12), at: at + BEAT / 2,
+        duration: BEAT * 3, volume: 0.018, attack: 0.04,
+        pan: -0.25, music: true, reverb: true });
     }
   }
 
-  _tone({ frequency, at, duration, volume, attack = 0.015, pan = 0, endFrequency, reverb = false }) {
-    if (this._voices.size >= 12) return;
+  _tone({ frequency, at, duration, volume, attack = 0.015, pan = 0, endFrequency, reverb = false, music = false, type = 'sine', cutoff }) {
+    if (this._voices.size >= (music ? 36 : 48)) return;
     const ctx = this.context;
     const oscillator = ctx.createOscillator();
-    oscillator.type = 'sine';
+    oscillator.type = type;
     oscillator.frequency.setValueAtTime(frequency, at);
     if (endFrequency) oscillator.frequency.exponentialRampToValueAtTime(endFrequency, at + duration * 0.7);
     const envelope = ctx.createGain();
@@ -196,11 +278,16 @@ export class ForestAudio {
     envelope.gain.exponentialRampToValueAtTime(0.0001, at + duration);
     const panner = ctx.createStereoPanner ? ctx.createStereoPanner() : ctx.createGain();
     if (panner.pan) panner.pan.value = pan;
-    oscillator.connect(envelope);
+    const nodes = [oscillator, envelope, panner];
+    if (cutoff) {
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass'; filter.frequency.value = cutoff; filter.Q.value = 0.4;
+      oscillator.connect(filter); filter.connect(envelope); nodes.push(filter);
+    } else oscillator.connect(envelope);
     envelope.connect(panner);
-    panner.connect(this._master);
+    panner.connect(music ? this._music : this._master);
     if (reverb) envelope.connect(this._reverbInput);
-    const voice = { source: oscillator, nodes: [oscillator, envelope, panner] };
+    const voice = { source: oscillator, nodes };
     this._voices.add(voice);
     oscillator.onended = () => this._cleanVoice(voice);
     oscillator.start(at);
@@ -221,26 +308,42 @@ export class ForestAudio {
     this._tone({ frequency: 390, endFrequency: 360, at: now + 0.62, duration: 0.65, volume: 0.014, attack: 0.14, pan, reverb: true });
   }
 
-  _footstep(now) {
-    if (this._voices.size >= 12) return;
+  _footstep(now, surface = 'earth') {
+    if (this._voices.size >= 44) return;
     const ctx = this.context;
+    const settings = {
+      earth: { cut: 1050, volume: 0.28, duration: 0.14, thump: 130 },
+      stone: { cut: 1900, volume: 0.23, duration: 0.09, thump: 210 },
+      wood: { cut: 780, volume: 0.19, duration: 0.11, thump: 175 },
+      snow: { cut: 2250, volume: 0.22, duration: 0.22, thump: 105 },
+    }[surface];
+    this._stepSide *= -1;
     const source = ctx.createBufferSource();
     source.buffer = this._noise;
     const filter = ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.value = 650 + Math.random() * 160;
+    filter.frequency.value = settings.cut * (0.94 + Math.random() * 0.12);
     const envelope = ctx.createGain();
     envelope.gain.setValueAtTime(0, now);
-    envelope.gain.linearRampToValueAtTime(0.035, now + 0.012);
-    envelope.gain.exponentialRampToValueAtTime(0.0001, now + 0.13);
+    envelope.gain.linearRampToValueAtTime(settings.volume, now + 0.008);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, now + settings.duration);
+    const panner = ctx.createStereoPanner ? ctx.createStereoPanner() : ctx.createGain();
+    if (panner.pan) panner.pan.value = this._stepSide * 0.12;
     source.connect(filter);
     filter.connect(envelope);
-    envelope.connect(this._master);
-    const voice = { source, nodes: [source, filter, envelope] };
+    envelope.connect(panner);
+    panner.connect(this._master);
+    const voice = { source, nodes: [source, filter, envelope, panner] };
     this._voices.add(voice);
     source.onended = () => this._cleanVoice(voice);
     source.start(now, Math.random() * 2);
-    source.stop(now + 0.15);
+    source.stop(now + settings.duration + 0.02);
+    // A restrained sole impact makes steps audible on small phone speakers.
+    this._tone({ frequency: settings.thump, endFrequency: settings.thump * 0.62,
+      at: now, duration: surface === 'wood' ? 0.16 : 0.1,
+      volume: surface === 'snow' ? 0.025 : 0.055, attack: 0.005, pan: this._stepSide * 0.12 });
+    if (surface === 'wood') this._tone({ frequency: 430, endFrequency: 330,
+      at: now + 0.005, duration: 0.08, volume: 0.02, attack: 0.003 });
   }
 
   _cleanVoice(voice) {
