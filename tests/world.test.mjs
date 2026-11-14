@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createJourney, stepJourney, setActivity, environment, pathAt, terrainAt,
-  biomeAt, riverAt, TrailWorld, serializeJourney, restoreJourney,
+  biomeAt, riverAt, pathSlopeAt, trailProfileAt, TrailWorld, serializeJourney, restoreJourney,
 } from '../js/world.js';
 
 function advance(state, seconds) {
@@ -140,12 +140,12 @@ test('streaming retains exactly five chunks with bounded entities, including sce
     const distance = iteration * 1031.7;
     world.update(distance);
     assert.equal(world.chunks.size, 5);
-    assert.ok(world.entities.length <= 110);
+    assert.ok(world.entities.length <= 230);
     assert.equal(new Set(world.entities.map(entity => entity.id)).size, world.entities.length);
     const center = Math.floor(distance / 18);
     assert.deepEqual([...world.chunks.keys()].sort((a, b) => a - b), [center - 2, center - 1, center, center + 1, center + 2]);
     for (const chunk of world.chunks.values()) {
-      assert.ok(chunk.entities.length <= 22);
+      assert.ok(chunk.entities.length <= 46);
       for (const entity of chunk.entities) {
         assert.ok(entity.s >= chunk.start && entity.s < chunk.end);
         if (entity.kind === 'tree') assert.ok(Math.abs(entity.side) > 2.5);
@@ -181,15 +181,15 @@ test('biomes form coherent stretches and the first stream follows the opening fo
   assert.deepEqual(new Set(changes.map(change => change.biome)), new Set(['forest', 'stream', 'meadow', 'mountain', 'enchanted']));
 });
 
-test('path and terrain stay continuous through region changes, and mountain elevations remain modest', () => {
+test('winding paths and elevated terrain remain continuous through region changes', () => {
   const seed = 532;
   close(pathAt(0, seed), 0);
   for (let s = -40; s < 1600; s += .37) {
-    assert.ok(Math.abs(pathAt(s + .001, seed) - pathAt(s - .001, seed)) < .001);
+    assert.ok(Math.abs(pathAt(s + .001, seed) - pathAt(s - .001, seed)) < .0026);
     for (const side of [-8, 0, 8]) {
       const elevation = terrainAt(s, side, seed);
-      assert.ok(elevation >= -.15 && elevation <= 2);
-      assert.ok(Math.abs(terrainAt(s + .001, side, seed) - terrainAt(s - .001, side, seed)) < .002);
+      assert.ok(elevation >= -3 && elevation <= 38);
+      assert.ok(Math.abs(terrainAt(s + .001, side, seed) - terrainAt(s - .001, side, seed)) < .008);
     }
   }
 });
@@ -202,7 +202,9 @@ test('river crossing metadata matches a narrow river and a smooth bed suitable f
   assert.ok(river.width >= 2.7 && river.width <= 3.3);
   assert.ok(river.center >= 48 && river.center <= 53);
   assert.equal(riverAt(river.center + 7.01, seed), null);
-  close(terrainAt(river.center, pathAt(river.center, seed), seed), -.13);
+  close(terrainAt(river.center, pathAt(river.center, seed), seed), river.level - .16);
+  close(trailProfileAt(river.center, seed).height, river.bridgeHeight);
+  close(river.bridgeHeight - river.level, .26);
   const edge = river.center + 7;
   assert.ok(Math.abs(terrainAt(edge - .001, 0, seed) - terrainAt(edge + .001, 0, seed)) < .002);
 });
@@ -219,5 +221,63 @@ test('environment produces a five-minute day, two-day seasons and stable seeded 
     state.time = time;
     assert.equal(environment(state).season, season);
     assert.deepEqual(environment(state), environment({ ...state }));
+  }
+});
+
+
+test('a wider view streams bounded deterministic chunks and scenery on both hillsides', () => {
+  const world = new TrailWorld(42);
+  world.update(0, 60);
+  assert.equal(world.chunks.size, 9);
+  assert.ok(world.entities.some(e => e.side < -30 && e.kind === 'tree'));
+  assert.ok(world.entities.some(e => e.side > 30 && e.kind === 'tree'));
+  const initial = JSON.stringify(world.entities);
+  for (const distance of [120, 7000, 107, 1e8, 0]) {
+    world.update(distance, 60);
+    assert.equal(world.chunks.size, 9);
+    assert.ok(world.entities.length <= 414);
+    assert.ok(world.entities.every(e => Math.abs(e.side) < 44));
+  }
+  assert.equal(JSON.stringify(world.entities), initial);
+  world.update(0, 36);
+  assert.equal(world.chunks.size, 5);
+  world.update(0, 84);
+  assert.equal(world.chunks.size, 11);
+  assert.ok(world.entities.length <= 506);
+  world.update(0, 1e9);
+  assert.equal(world.chunks.size, 11);
+});
+
+test('the route visibly winds, climbs into passes and descends into valleys', () => {
+  for (const seed of [1, 42, 81, 532, 0xffffffff]) {
+    let low = Infinity, high = -Infinity, climb = 0, descent = 0, bend = 0;
+    for (let s = 0; s < 620; s += .5) {
+      const profile = trailProfileAt(s, seed);
+      low = Math.min(low, profile.height); high = Math.max(high, profile.height);
+      climb = Math.max(climb, profile.grade); descent = Math.min(descent, profile.grade);
+      bend = Math.max(bend, Math.abs(pathAt(s + 10, seed) - (pathAt(s, seed) + pathAt(s + 20, seed)) / 2));
+      assert.ok(Math.abs(profile.grade) < .7, 'the trail must remain a walkable slope');
+      assert.ok(profile.width > .6 && profile.width < 1.1);
+      close(pathSlopeAt(s, seed), (pathAt(s + .0001, seed) - pathAt(s - .0001, seed)) / .0002, 1e-7);
+    }
+    assert.ok(high - low > 10, 'passes and valleys need meaningful vertical relief');
+    assert.ok(climb > .25 && descent < -.25, 'the route must both climb and descend');
+    assert.ok(bend > 1.5, 'the path must have visible bends within one landscape');
+  }
+});
+
+
+test('mountain ridges have visible relief behind the trail and lower foreground foothills', () => {
+  for (const seed of [1, 42, 81, 532, 0xffffffff]) {
+    let highestFar = 0, highestNear = 0;
+    for (let s = 175; s <= 210; s += 1) {
+      const profile = trailProfileAt(s, seed);
+      for (const offset of [14, 18, 22, 26]) {
+        highestFar = Math.max(highestFar, terrainAt(s, profile.x - offset, seed) - profile.height);
+        highestNear = Math.max(highestNear, terrainAt(s, profile.x + offset, seed) - profile.height);
+      }
+    }
+    assert.ok(highestFar > 12, 'distant ridgelines must rise several tree heights above the trail');
+    assert.ok(highestNear < 5, 'foreground terrain should not hide the traveller in a trench');
   }
 });

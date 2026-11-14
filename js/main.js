@@ -1,6 +1,6 @@
-import { createJourney, stepJourney, setActivity, environment, serializeJourney, restoreJourney } from './world.js';
-import { ForestScene } from './scene.js';
-import { ForestAudio } from './audio.js';
+import { createJourney, stepJourney, setActivity, environment, serializeJourney, restoreJourney, trailProfileAt } from './world.js?v=3';
+import { ForestScene } from './scene.js?v=3';
+import { ForestAudio } from './audio.js?v=3';
 
 const SAVE_KEY = 'into-the-wild.journey.v1';
 const SOUND_KEY = 'into-the-wild.sound.v2';
@@ -20,6 +20,11 @@ state.sound = soundPreference !== 'off';
 if (state.mode === 'walking') setActivity(state, 'paused');
 const canvas = document.getElementById('c');
 const scene = new ForestScene(canvas, state.seed);
+const sceneResize = new ResizeObserver(entries => {
+  const { width, height } = entries[0].contentRect;
+  scene.resize(width, height);
+});
+sceneResize.observe(canvas.parentElement);
 const audio = new ForestAudio();
 const ui = Object.fromEntries([
   'walk', 'walk-label', 'snack', 'sleep', 'sound', 'sound-label', 'journal-open', 'journal',
@@ -94,6 +99,7 @@ function openJournal() {
 function closeJournal() { ui.journal.close(); ui['journal-open'].focus(); }
 function renderUI() {
   const env = environmentNow = environment(state);
+  const trail = trailProfileAt(state.distance, state.seed);
   const walking = state.mode === 'walking';
   ui.walk.setAttribute('aria-pressed', String(walking));
   ui['walk-label'].textContent = walking ? 'Pause a moment' : state.distance > .1 ? 'Keep wandering' : 'Begin wandering';
@@ -119,6 +125,8 @@ function renderUI() {
       : state.mode === 'sleep' ? 'Rest easy. The trail will be here in the morning.'
       : state.mode === 'walking' ? env.weather === 'rain' ? 'Rain on leaves, and a path that keeps going.'
         : env.biome === 'stream' ? 'Follow the sound of running water.'
+        : trail.grade > .07 ? 'The trail climbs. Take it one step at a time.'
+        : trail.grade < -.07 ? 'Down through the trees, into the valley.'
         : env.biome === 'mountain' ? 'The world feels a little wider up here.'
         : env.period === 'night' ? 'Follow the lantern. Watch for the little lights.' : 'One step, then another. Let the world come to you.'
       : state.distance < .1 ? 'Take the trail. See what finds you.' : 'There is always something worth pausing for.';

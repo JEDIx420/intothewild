@@ -18,7 +18,7 @@ Walk a winding trail through woods, streams, meadows, mountain passes and enchan
 | Speaker / M | Enable or mute the original forest soundscape |
 | Notebook / J | Read field notes and controls |
 
-The wilderness fills a much larger, responsive stage, with closer framing on phones. The on-screen controls also work with touch. A day lasts about five minutes; seasons change every two game days. Sleeping advances the clock, so you can experience later seasons without waiting. Foxes patrol and sniff, deer walk and graze, rabbits hop, and birds flutter along the trail. Wildlife keeps moving while you pause, snack or sleep. Rare magical inhabitants appear too. Your place and sightings save automatically in this browser. If storage is unavailable, the game still runs for the current session.
+The wilderness fills a responsive panorama while the traveller keeps the original small scale. The camera reveals more terrain, with winding forest paths, climbs, ridges and descents into river valleys. The on-screen controls also work with touch. A day lasts about five minutes; seasons change every two game days. Sleeping advances the clock, so you can experience later seasons without waiting. Foxes patrol and sniff, deer walk and graze, rabbits hop, and birds flutter along the trail. Wildlife keeps moving while you pause, snack or sleep. Rare magical inhabitants appear too. Your place and sightings save automatically in this browser. If storage is unavailable, the game still runs for the current session.
 
 Music and forest ambience start with your first Walk, Snack or Sleep tap (or the speaker button). A calm melody and harmony accompany the journey, with footsteps matching your walking pace and the ground beneath you. The speaker button or M mutes the sound; your choice is remembered.
 
@@ -41,11 +41,11 @@ npm test
 
 ## How it works
 
-- The software renderer draws a 480 × 300 pixel canvas with a fixed orthographic camera, depth testing, stepped colour ramps and dithering.
-- A small, seeded window of five trail sections is streamed around the traveller. Old sections are discarded; tree sprites have a bounded cache.
+- The software renderer adapts its canvas to the available screen area while keeping pixel figures small. It uses a fixed orthographic camera, depth testing, stepped colour ramps and dithering. A projected heightfield creates real slopes and correct terrain occlusion.
+- A bounded, seeded window of five to eleven trail sections is streamed around the traveller, depending on the view. Old sections are discarded; tree sprites have a bounded cache.
 - Terrain, wildlife and scenery are deterministic. The journey save stores a seed, distance, clock and limited encounter history, rather than the whole world.
 - Wildlife follows deterministic patrols with gentle stops, turning, gait and hop animation; land animals stay out of river water.
-- Walking, sitting and sleeping use articulated procedural animation. Daylight, weather and seasons affect the landscape. The audio is generated with the Web Audio API after a user gesture.
+- Walking, sitting and sleeping use articulated procedural animation. The traveller follows bends, leans with the grade, and places boots and the walking stick on the actual terrain. Daylight, weather and seasons affect the landscape. The audio is generated with the Web Audio API after a user gesture.
 - The app pauses simulation when hidden and resumes without a large elapsed-time jump. Reduced-motion preferences suppress foliage sway and falling particles.
 
 ## GitHub Pages

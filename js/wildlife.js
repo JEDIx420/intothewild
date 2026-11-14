@@ -1,4 +1,4 @@
-import { pathAt, riverAt } from './world.js';
+import { pathAt, riverAt } from './world.js?v=3';
 
 const TAU = Math.PI * 2;
 const QUARTER = Math.PI / 2;

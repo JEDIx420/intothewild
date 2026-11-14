@@ -1,7 +1,8 @@
-import { Raster, rgb, hash, noise, lerp, clamp, SIN, COS, R2, bayer } from './pixel.js';
-import { pathAt, terrainAt, biomeAt, riverAt, environment, TrailWorld } from './world.js';
-import { drawTraveller, drawCreature } from './actors.js';
-import { sampleWildlife } from './wildlife.js';
+import { Raster, rgb, hash, lerp, clamp } from './pixel.js?v=3';
+import { pathAt, trailProfileAt, biomeAt, riverAt, environment, TrailWorld } from './world.js?v=3';
+import { LandscapeTerrain } from './landscape.js?v=3';
+import { drawTraveller, drawCreature } from './actors.js?v=3';
+import { sampleWildlife } from './wildlife.js?v=3';
 
 const PAPER = rgb(250, 249, 246);
 const LEAVES = [
@@ -10,122 +11,49 @@ const LEAVES = [
   [[94, 65, 51], [154, 104, 54], [202, 151, 78]],
   [[84, 107, 102], [151, 168, 158], [218, 225, 211]],
 ];
-const GRASS = [[124, 145, 90], [113, 132, 77], [157, 139, 88], [203, 214, 205]];
 const CROWN = [[.1, 0, 3.9, 1.5], [-1.2, -.7, 3.4, 1.1], [1.35, .55, 3.6, 1.25], [-.6, 1, 4.1, 1.1], [.8, -1, 4.2, 1.1], [.2, .1, 5, 1]];
 const SPECIES = { fox: 'Red fox', deer: 'Woodland deer', rabbit: 'Wild rabbit', bird: 'Woodland bird', stag: 'Moonlit stag', spirit: 'Lantern spirit' };
 
 export class ForestScene {
   constructor(canvas, seed) {
-    // A tighter panorama removes the old empty sky margins. CSS covers the
-    // available stage, keeping the traveller large on desktop and portrait.
-    this.r = new Raster(480, 300, 12, canvas);
-    this.r.oy = 184;
-    this.seed = seed; this.world = new TrailWorld(seed);
+    this.canvas = canvas;
+    this.seed = seed;
+    this.world = new TrailWorld(seed);
+    this.terrain = new LandscapeTerrain(seed);
     this.sprites = new Map(); this.active = []; this.visibleAnimals = [];
-    this.grid = new Float32Array(97 * 97); this.gridKey = '';
-    this.heightRows = 97; this.step = .5;
     this.reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const { width, height, scale } = this.r;
-    this.inverseX = new Float32Array(width * height); this.inverseY = new Float32Array(width * height);
+    this.resize(canvas.clientWidth || 960, canvas.clientHeight || 460);
+  }
+  resize(cssWidth, cssHeight) {
+    if (!(cssWidth > 0 && cssHeight > 0)) return;
+    // Keep the original small pixel figures. A larger stage adds more world
+    // pixels instead of magnifying and cropping the old square view.
+    const renderScale = 10;
+    const pixelScale = Math.max((cssWidth <= 600 ? .9 : 1.4) * 12 / renderScale,
+      Math.sqrt(cssWidth * cssHeight / 400000));
+    const width = Math.max(240, Math.round(cssWidth / pixelScale));
+    const height = Math.max(120, Math.round(cssHeight / pixelScale));
+    if (this.r?.width === width && this.r?.height === height) return;
+    this.r = new Raster(width, height, renderScale, this.canvas);
+    this.r.ox = width * .5; this.r.oy = height * .62;
+    this.edgeFade = new Float32Array(width * height);
     for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-      const u = (x + .5 - this.r.ox) / scale, v = (y + .5 - this.r.oy) / (scale * SIN), i = y * width + x;
-      this.inverseX[i] = (u + v) / R2; this.inverseY[i] = (v - u) / R2;
-    }
-    this.shades = new Uint32Array(256 * 3);
-  }
-  updateGrid(state) {
-    const x = Math.floor(pathAt(state.distance, state.seed) * 2) / 2 - 24;
-    const s = Math.floor(state.distance * 2) / 2 - 24;
-    const key = `${x}:${s}`;
-    if (key === this.gridKey) return;
-    this.gridKey = key; this.gridX = x; this.gridS = s;
-    for (let j = 0; j < 97; j++) for (let k = 0; k < 97; k++) {
-      this.grid[j * 97 + k] = terrainAt(s + j * .5, x + k * .5, state.seed);
-    }
-    // Along-trail samples avoid repeating trigonometry for each ground pixel.
-    this.rows = [];
-    for (let j = 0; j < 194; j++) {
-      const v = s + j * .25;
-      this.rows.push({ path: pathAt(v, state.seed), biome: biomeAt(v, state.seed), river: riverAt(v, state.seed) });
+      const edgeDistance = Math.min(x / Math.max(8, width * .018),
+        (width - 1 - x) / Math.max(8, width * .018),
+        y / Math.max(8, height * .05), (height - 1 - y) / Math.max(8, height * .035));
+      const t = clamp(edgeDistance, 0, 1);
+      this.edgeFade[y * width + x] = 1 - t * t * (3 - 2 * t);
     }
   }
-  height(s, x) {
-    const gx = clamp((x - this.gridX) * 2, 0, 95.999), gy = clamp((s - this.gridS) * 2, 0, 95.999);
-    const ix = gx | 0, iy = gy | 0, fx = gx - ix, fy = gy - iy, i = iy * 97 + ix;
-    return lerp(lerp(this.grid[i], this.grid[i + 1], fx), lerp(this.grid[i + 97], this.grid[i + 98], fx), fy);
-  }
-  row(s) { return this.rows[clamp(Math.floor((s - this.gridS) * 4), 0, 193)]; }
-  surface(s, x) {
-    let h = this.height(s, x);
-    const river = riverAt(s, this.seed);
-    if (river && Math.abs(s - river.center) < river.width * .5 + .4 && Math.abs(x - pathAt(s, this.seed)) < 1.3) h = .18;
-    return h;
-  }
-  ground(state, env) {
-    const r = this.r, w = r.width, seedOffset = (state.seed % 10000) / 100;
-    const baseGrass = GRASS[env.seasonIndex] || GRASS[0];
-    const time = state.elapsed;
-    for (let iy = 75; iy < r.height; iy++) for (let ix = 7; ix < w - 7; ix++) {
-      const i = iy * w + ix, bx = this.inverseX[i], by = this.inverseY[i];
-      if (Math.abs(bx) > 24 || Math.abs(by) > 24) continue;
-      let x = bx, y = by, z = 0;
-      for (let iteration = 0; iteration < 3; iteration++) {
-        z = this.height(state.distance - y, x + r.cameraX) - r.cameraZ;
-        const delta = z * COS / (SIN * R2);
-        x = bx + delta; y = by + delta;
-      }
-      const edge = Math.pow(Math.pow(Math.abs(x) / 16.2, 4) + Math.pow(Math.abs(y) / 14.4, 4), .25);
-      if (edge > 1.025) continue;
-      const wx = x + r.cameraX, s = state.distance - y;
-      const fine = hash(Math.floor(wx * 12) + seedOffset, Math.floor(s * 12));
-      if (edge > .94 && (edge - .94) / .085 > fine) continue;
-      const row = this.row(s), side = wx - row.path;
-      const coarse = noise(wx * .42 + seedOffset, s * .42), grit = (fine - .5) * 13;
-      const pathEdge = 1.02 + (noise(wx * 1.1, s * .8) - .5) * .29;
-      const onPath = Math.abs(side) < pathEdge;
-      let red, green, blue;
-      let actualHeight = z + r.cameraZ;
-      const river = row.river;
-      const water = river && Math.abs(s - river.center + Math.sin(wx * .34) * .28) < river.width * .5;
-      if (water) {
-        if (Math.abs(side) < 1.27) {
-          const plank = Math.floor(s * 4.4), grain = hash(plank, Math.floor(wx * 18)) * 9;
-          const seam = ((s * 4.4) % 1 + 1) % 1 < .10;
-          red = seam ? 91 : 158 + grain; green = seam ? 76 : 128 + grain; blue = seam ? 59 : 87 + grain;
-          actualHeight = .18;
-        } else {
-          const ripple = Math.sin(wx * 4.1 + s * 7.3 + time * 1.5) + Math.sin(wx * 1.8 - s * 3.1 - time * .7);
-          const bank = Math.abs(s - river.center) / (river.width * .5);
-          red = 64 + bank * 26 + coarse * 17; green = 119 + bank * 23 + coarse * 16; blue = 127 + bank * 17;
-          if (ripple > 1.48 && fine > .38) { red += 57; green += 48; blue += 38; }
-          if (env.seasonIndex === 3) { red += 52; green += 44; blue += 39; }
-        }
-      } else if (onPath) {
-        const stone = fine > .979 ? 24 : fine < .023 ? -19 : 0;
-        const trail = (coarse - .5) * 18 + grit + stone;
-        red = 185 + trail; green = 169 + trail; blue = 132 + trail;
-        if (env.seasonIndex === 3) { red += 12; green += 17; blue += 24; }
-      } else {
-        let shade = (coarse - .5) * 31 + grit;
-        if (row.biome === 'enchanted') shade -= 16;
-        red = baseGrass[0] + shade; green = baseGrass[1] + shade; blue = baseGrass[2] + shade;
-        if (row.biome === 'mountain') { red += 9; green -= 2; blue += 16; }
-        if (row.biome === 'meadow') { red += 12; green += 9; blue += 2; }
-        if (row.biome === 'stream') { red -= 9; green += 1; blue += 8; }
-        if (fine > .977) { red += 21; green += 21; blue += 11; }
-        if (fine < .025) { red -= 24; green -= 17; blue -= 12; }
-      }
-      if (edge > .96) { red += 8; green += 8; blue += 6; }
-      r.pixels[i] = rgb(red, green, blue);
-      r.depth[i] = (x + y) / R2 * COS + (actualHeight - r.cameraZ) * SIN;
-    }
-    r.groundZ.set(r.depth);
-  }
+  height(s, x) { return this.terrain.height(s, x); }
+  surface(s, x) { return this.terrain.surface(s, x); }
   treeSprite(kind, season, variant, size) {
     const band = size < .85 ? .78 : size > 1.12 ? 1.16 : .98;
     const key = `${kind}:${season}:${variant}:${band}`;
     if (this.sprites.has(key)) return this.sprites.get(key);
-    const r = new Raster(142, 150, 12); r.ox = 71; r.oy = 139; r.clear();
+    const pixelScale = this.r.scale / 12;
+    const r = new Raster(Math.ceil(142 * pixelScale), Math.ceil(150 * pixelScale), this.r.scale);
+    r.ox = 71 * pixelScale; r.oy = 139 * pixelScale; r.clear();
     const scale = band, bark = kind === 'birch' ? [179, 178, 150] : [104, 83, 65];
     const twig = [82, 70, 59], colors = LEAVES[season];
     r.capsule([0, 0, 0], [.15 * scale, .08, 2.8 * scale], .24 * scale, .11 * scale, bark, 'rough');
@@ -174,12 +102,16 @@ export class ForestScene {
   bridge(river) {
     const r = this.r, s0 = river.center - river.width * .5 - .55, s1 = river.center + river.width * .5 + .55;
     const timber = [128, 101, 72], highlight = [164, 139, 95];
+    const deck = river.bridgeHeight;
     for (const side of [-1.35, 1.35]) {
+      const rail = [];
       for (const s of [s0, river.center, s1]) {
-        const x = pathAt(s, this.seed) + side;
-        r.capsule([x, -s, .08], [x, -s, .89], .075, .06, timber, 'rough');
+        const profile = trailProfileAt(s, this.seed), normal = Math.hypot(1, profile.slope);
+        const x = profile.x + side / normal, y = -s + side * profile.slope / normal;
+        r.capsule([x, y, deck - .1], [x, y, deck + .71], .075, .06, timber, 'rough');
+        rail.push([x, y, deck + .6]);
       }
-      r.capsule([pathAt(s0, this.seed) + side, -s0, .78], [pathAt(s1, this.seed) + side, -s1, .78], .055, .055, highlight, 'rough');
+      for (let n = 1; n < rail.length; n++) r.capsule(rail[n - 1], rail[n], .055, .055, highlight, 'rough');
     }
   }
   smallProp(e, x, y, z, env, time) {
@@ -187,11 +119,11 @@ export class ForestScene {
     if (e.kind === 'rock') {
       const gray = env.seasonIndex === 3 ? [182, 193, 184] : [123, 132, 119];
       const mountain = biomeAt(e.s, this.seed) === 'mountain' && Math.abs(e.side) > 3;
-      const size = scale * (mountain ? 2.5 : 1);
+      const size = scale * (mountain ? 1.65 : 1);
       r.ellipsoid(x, y, z + .24 * size, .61 * size, .4 * size, .38 * size, gray, 'rough');
       if (mountain) {
-        r.ellipsoid(x + .22, y - .18, z + .71 * size, .39 * size, .32 * size, .51 * size, [141, 146, 136], 'rough');
-        r.ellipsoid(x + .16, y - .1, z + 1.1 * size, .26 * size, .21 * size, .22 * size, env.seasonIndex === 3 ? [223, 227, 215] : [164, 165, 146], 'rough');
+        r.ellipsoid(x + .22, y - .18, z + .43 * size, .44 * size, .37 * size, .29 * size, [141, 146, 136], 'rough');
+        r.ellipsoid(x + .16, y - .1, z + .65 * size, .26 * size, .25 * size, .15 * size, env.seasonIndex === 3 ? [223, 227, 215] : [164, 165, 146], 'rough');
       } else r.sphere(x - .2, y + .05, z + .3, .2, [101, 124, 76], 'rough');
     } else if (e.kind === 'log') {
       r.capsule([x - .9, y, z + .2], [x + .9, y + .4, z + .21], .23, .26, [99, 77, 59], 'rough');
@@ -215,10 +147,10 @@ export class ForestScene {
   }
   particles(state, env) {
     const r = this.r, t = state.elapsed;
-    const intensity = env.night > .4 ? 23 : 10;
+    const intensity = Math.round((env.night > .4 ? 23 : 10) * Math.sqrt(r.width * r.height / 163200));
     for (let k = 0; k < intensity; k++) {
-      const x = r.cameraX + (hash(k, 90) - .5) * 23 + Math.sin(t * .18 + k) * .7;
-      const s = state.distance + (hash(k, 91) - .5) * 23 + Math.cos(t * .15 + k) * .6;
+      const x = r.cameraX + (hash(k, 90) - .5) * this.terrain.radius * 1.2 + Math.sin(t * .18 + k) * .7;
+      const s = state.distance + (hash(k, 91) - .5) * this.terrain.radius * 1.2 + Math.cos(t * .15 + k) * .6;
       const z = this.height(s, x) + .7 + hash(k, 12) * 2.1 + Math.sin(t + k) * .22;
       const blink = Math.sin(t * 1.3 + k * 2.5);
       if (env.night > .4) {
@@ -236,7 +168,7 @@ export class ForestScene {
       const snow = env.weather === 'snow', leaf = env.seasonIndex === 2 && env.weather !== 'rain';
       const count = snow ? 65 : leaf ? 16 : 55;
       for (let k = 0; k < count; k++) {
-        const sx = 35 + ((hash(k, 28) * 405 + t * (snow ? 4 : leaf ? 7 : 15)) % 405);
+        const sx = 8 + ((hash(k, 28) * (r.width - 16) + t * (snow ? 4 : leaf ? 7 : 15)) % (r.width - 16));
         const sy = 30 + ((hash(k, 29) * (r.height - 40) + t * (snow ? 10 : leaf ? 15 : 130)) % (r.height - 40));
         const ix = sx | 0, iy = sy | 0, i = iy * r.width + ix;
         if (r.depth[i] < -1e8) continue;
@@ -252,27 +184,31 @@ export class ForestScene {
     for (let i = 0; i < r.pixels.length; i++) {
       if (r.depth[i] < -1e8) continue;
       const c = r.pixels[i];
-      r.pixels[i] = rgb((c & 255) * red + dusk * 16 + dawn * 5, (c >> 8 & 255) * green + dusk * 3, (c >> 16 & 255) * blue + night * 12 - dusk * 4);
+      const haze = clamp((-r.depth[i] - 5) / 65, 0, 1) * (env.weather === 'mist' ? .34 : .12);
+      const cr = lerp((c & 255) * red + dusk * 16 + dawn * 5, lerp(208, 58, night), haze);
+      const cg = lerp((c >> 8 & 255) * green + dusk * 3, lerp(219, 73, night), haze);
+      const cb = lerp((c >> 16 & 255) * blue + night * 12 - dusk * 4, lerp(208, 94, night), haze);
+      const edge = this.edgeFade[i];
+      r.pixels[i] = rgb(lerp(cr, 250, edge), lerp(cg, 249, edge), lerp(cb, 246, edge));
     }
   }
   draw(state) {
     const started = performance.now(), env = environment(state), r = this.r;
-    this.updateGrid(state);
-    r.cameraX = pathAt(state.distance, state.seed); r.cameraY = -state.distance;
-    r.cameraZ = this.surface(state.distance, r.cameraX) * .7;
-    r.clear(PAPER); this.ground(state, env);
-    this.world.update(state.distance);
+    const profile = trailProfileAt(state.distance, state.seed);
+    r.cameraX = profile.x; r.cameraY = -state.distance; r.cameraZ = profile.height;
+    this.terrain.prepare(state, r);
+    r.clear(PAPER); this.terrain.draw(state, env, r);
+    this.world.update(state.distance, this.terrain.radius);
     const active = this.active; active.length = 0;
     for (const e of this.world.entities) {
       const motion = e.kind === 'animal' ? sampleWildlife(e, state.elapsed, state.seed) : null;
       const s = motion ? motion.s : e.s;
       const relative = s - state.distance;
-      if (Math.abs(relative) > 24) continue;
+      if (Math.abs(relative) > this.terrain.radius) continue;
       const x = motion ? motion.x : pathAt(s, state.seed) + e.side;
-      const y = -s, dx = x - r.cameraX, dy = y - r.cameraY;
-      const edge = Math.pow(Math.pow(Math.abs(dx) / 15, 4) + Math.pow(Math.abs(dy) / 13.6, 4), .25);
-      if (edge > .98) continue;
-      const z = this.surface(s, x);
+      const y = -s, z = this.surface(s, x);
+      const point = r.project(x, y, z);
+      if (point.sx < -85 || point.sx > r.width + 85 || point.sy < -15 || point.sy > r.height + 110) continue;
       if (e.kind === 'tree') r.shadow(x + 2.1, y + .5, z, (e.scale || 1) * 1.7);
       if (e.kind === 'rock') r.shadow(x + .3, y, z, .6);
       active.push({ e, x, y, z, motion });
@@ -280,26 +216,30 @@ export class ForestScene {
     r.shadow(r.cameraX + .5, r.cameraY, this.surface(state.distance, r.cameraX), .6);
     r.applyShadows();
     const bridges = new Map();
-    for (let s = state.distance - 20; s <= state.distance + 20; s += 4) {
+    for (let s = state.distance - this.terrain.radius; s <= state.distance + this.terrain.radius; s += 4) {
       const river = riverAt(s, state.seed);
-      if (river && Math.abs(river.center - state.distance) + river.width * .5 < 12.5) bridges.set(river.center, river);
+      if (river) bridges.set(river.center, river);
     }
     for (const river of bridges.values()) this.bridge(river);
     const treeCount = active.filter(v => v.e.kind === 'tree').length;
     const resting = state.mode === 'snack' || state.mode === 'sleep';
-    const travellerGround = this.surface(state.distance, r.cameraX + (resting ? 1.12 : 0));
-    const protectedPoint = r.project(r.cameraX + (resting ? 1.12 : 0), r.cameraY, travellerGround + (resting ? .6 : 1.2));
-    r.cutaways = [{ x: protectedPoint.sx, y: protectedPoint.sy, d: protectedPoint.d, rx: resting ? 25 : 18, ry: resting ? 20 : 27 }];
+    const normal = Math.hypot(1, profile.slope);
+    const px = r.cameraX + (resting ? 1.12 / normal : 0);
+    const py = r.cameraY + (resting ? 1.12 * profile.slope / normal : 0);
+    const travellerGround = this.surface(-py, px);
+    const protectedPoint = r.project(px, py, travellerGround + (resting ? .6 : 1.2));
+    const pixelScale = r.scale / 12;
+    r.cutaways = [{ x: protectedPoint.sx, y: protectedPoint.sy, d: protectedPoint.d, rx: (resting ? 25 : 18) * pixelScale, ry: (resting ? 20 : 27) * pixelScale }];
     for (const animal of active) {
       if (!animal.motion || Math.abs(animal.motion.s - state.distance) > 9) continue;
       const point = r.project(animal.x, animal.y, animal.z + .6 + animal.motion.hop);
-      r.cutaways.push({ x: point.sx, y: point.sy, d: point.d, rx: 15, ry: 15 });
+      r.cutaways.push({ x: point.sx, y: point.sy, d: point.d, rx: 15 * pixelScale, ry: 15 * pixelScale });
     }
     this.visibleAnimals.length = 0;
     for (const { e, x, y, z, motion } of active) {
       if (e.kind === 'tree') {
         const sprite = this.treeSprite(e.variant || 'oak', env.seasonIndex, Math.abs(e.seed | 0) % 3, e.scale || 1);
-        const sway = this.reducedMotion ? 0 : Math.sin(Math.floor(state.elapsed * 8) / 8 * .8 + e.seed) * 1.1;
+        const sway = this.reducedMotion ? 0 : Math.sin(Math.floor(state.elapsed * 8) / 8 * .8 + e.seed) * 1.1 * pixelScale;
         r.blit(sprite, x, y, z, sway);
       } else if (e.kind === 'animal') {
         const near = Math.abs(motion.s - state.distance), kind = e.variant || 'deer';
@@ -307,9 +247,7 @@ export class ForestScene {
         if (near < 8) this.visibleAnimals.push({ id: e.id, kind, name: SPECIES[kind] || kind, distance: near });
       } else this.smallProp(e, x, y, z, env, state.elapsed);
     }
-    const offset = state.mode === 'snack' || state.mode === 'sleep' ? 1.12 : 0;
-    const px = r.cameraX + offset, py = r.cameraY, pz = this.surface(state.distance, px);
-    drawTraveller(r, { x: px, y: py, z: pz, time: state.elapsed, distance: state.distance, mode: state.mode, modeTime: state.modeTime, night: env.night > .4, reducedMotion: this.reducedMotion });
+    drawTraveller(r, { x: px, y: py, z: travellerGround, yaw: Math.atan2(-1, profile.slope), grade: profile.grade / normal, groundAt: (x, y) => this.surface(-y, x), time: state.elapsed, distance: state.distance, mode: state.mode, modeTime: state.modeTime, night: env.night > .4, reducedMotion: this.reducedMotion });
     r.applyShadows(); r.shadeEdges(); this.lighting(env); this.particles(state, env); r.present();
     this.lastStats = { renderMs: performance.now() - started, chunks: this.world.chunks.size, entities: this.world.entities.length, trees: treeCount, sprites: this.sprites.size, visible: active.length };
     return env;

@@ -70,53 +70,138 @@ export function biomeAt(s, seed = DEFAULT_SEED) {
   return regionBiome(regionAt(finite(s), worldSeed), worldSeed);
 }
 
+function mountainBandAt(position, seed) {
+  const region = regionAt(position, seed), edge = 20;
+  let weight = 0, derivative = 0;
+  const slope = value => value <= 0 || value >= 1 ? 0 : 6 * value * (1 - value);
+  for (let index = Math.max(0, region - 1); index <= region + 1; index++) {
+    if (regionBiome(index, seed) !== 'mountain') continue;
+    const a = (position - boundary(index, seed) + edge) / (edge * 2);
+    const b = (position - boundary(index + 1, seed) + edge) / (edge * 2);
+    weight += smooth(a) * (1 - smooth(b));
+    derivative += (slope(a) * (1 - smooth(b)) - smooth(a) * slope(b)) / (edge * 2);
+  }
+  return { weight, derivative };
+}
+
+// Several smooth bends create a trail whose direction visibly changes within a
+// single view, while +s always advances along the journey.
 export function pathAt(s, seed = DEFAULT_SEED) {
-  const position = finite(s);
-  const worldSeed = seedOf(seed);
+  const position = finite(s), worldSeed = seedOf(seed);
   const a = randomAt(worldSeed, 0, 201) * TAU;
   const b = randomAt(worldSeed, 0, 202) * TAU;
-  return (Math.sin(position * .026 + a) - Math.sin(a)) * 1.8
-    + (Math.sin(position * .063 + b) - Math.sin(b)) * .55;
+  const c = randomAt(worldSeed, 0, 203) * TAU;
+  const mountain = mountainBandAt(position, worldSeed).weight;
+  return (Math.sin(position * .072 + a) - Math.sin(a)) * 4.6
+    + (Math.sin(position * .17 + b) - Math.sin(b)) * 1.7
+    + (Math.sin(position * .029 + c) - Math.sin(c)) * 1.1
+    + mountain * 2.9 * Math.sin(position * .18 + c);
+}
+
+export function pathSlopeAt(s, seed = DEFAULT_SEED) {
+  const position = finite(s), worldSeed = seedOf(seed);
+  const mountain = mountainBandAt(position, worldSeed);
+  const turn = position * .18 + randomAt(worldSeed, 0, 203) * TAU;
+  return Math.cos(position * .072 + randomAt(worldSeed, 0, 201) * TAU) * .3312
+    + Math.cos(position * .17 + randomAt(worldSeed, 0, 202) * TAU) * .289
+    + Math.cos(position * .029 + randomAt(worldSeed, 0, 203) * TAU) * .0319
+    + mountain.weight * .522 * Math.cos(turn) + mountain.derivative * 2.9 * Math.sin(turn);
+}
+
+function routeShapeAt(position, seed) {
+  const phase = randomAt(seed, 0, 401) * TAU;
+  const second = randomAt(seed, 0, 402) * TAU;
+  let mountain = 0, valley = 0;
+  const region = regionAt(position, seed);
+  for (let index = Math.max(0, region - 1); index <= region + 1; index++) {
+    const biome = regionBiome(index, seed);
+    if (biome !== 'mountain' && biome !== 'stream' && biome !== 'meadow') continue;
+    // Broad foothills begin before the named mountain section and taper into
+    // the next landscape, rather than making a raised platform at its border.
+    const edge = biome === 'mountain' ? 20 : 19;
+    const weight = smooth((position - boundary(index, seed) + edge) / (edge * 2))
+      * (1 - smooth((position - boundary(index + 1, seed) + edge) / (edge * 2)));
+    if (biome === 'mountain') mountain += weight;
+    else valley += weight * (biome === 'stream' ? 1 : .65);
+  }
+  const rolling = 1.9 * Math.sin(position * .055 + phase)
+    + .65 * Math.sin(position * .103 + second);
+  const height = 1.5 + rolling - valley * 1.3
+    + mountain * (8.4 + 1.6 * Math.sin(position * .075 + second));
+  return { phase, second, mountain, valley, height };
 }
 
 export function riverAt(s, seed = DEFAULT_SEED) {
-  const position = finite(s);
-  const worldSeed = seedOf(seed);
+  const position = finite(s), worldSeed = seedOf(seed);
   const region = regionAt(position, worldSeed);
   for (let index = Math.max(0, region - 1); index <= region + 1; index++) {
     if (regionBiome(index, worldSeed) !== 'stream') continue;
     const center = boundary(index, worldSeed) + 10;
     if (Math.abs(position - center) <= 7) {
-      return { center, width: 2.7 + randomAt(worldSeed, index, 301) * .6 };
+      const level = routeShapeAt(center, worldSeed).height - .12;
+      return { center, width: 2.7 + randomAt(worldSeed, index, 301) * .6,
+        level, bridgeHeight: level + .26 };
     }
   }
   return null;
 }
 
-export function terrainAt(s, side, seed = DEFAULT_SEED) {
-  const position = finite(s);
-  const worldSeed = seedOf(seed);
-  const lateral = finite(side) - pathAt(position, worldSeed);
-  const phase = randomAt(worldSeed, 0, 401) * TAU;
-  const shoulder = smooth((Math.abs(lateral) - 1.3) / 6.7);
-  let mountain = 0;
-  const region = regionAt(position, worldSeed);
-  for (let index = Math.max(0, region - 1); index <= region + 1; index++) {
-    if (regionBiome(index, worldSeed) !== 'mountain') continue;
-    mountain += smooth((position - boundary(index, worldSeed) + 12) / 24)
-      * (1 - smooth((position - boundary(index + 1, worldSeed) + 12) / 24));
+// The height-grid builder samples a row at a time. Reusing its immutable row
+// parameters avoids repeating the biome and river calculations for every x.
+let lastTerrainRow = null;
+function terrainRowAt(position, seed) {
+  if (lastTerrainRow?.s === position && lastTerrainRow.seed === seed) return lastTerrainRow;
+  const shape = routeShapeAt(position, seed);
+  lastTerrainRow = { ...shape, s: position, seed, x: pathAt(position, seed),
+    slope: pathSlopeAt(position, seed), river: riverAt(position, seed) };
+  return lastTerrainRow;
+}
+
+export function terrainAt(s, x, seed = DEFAULT_SEED) {
+  const position = finite(s), worldSeed = seedOf(seed);
+  const row = terrainRowAt(position, worldSeed);
+  const lateral = (finite(x) - row.x) / Math.hypot(1, row.slope);
+  const away = Math.max(0, Math.abs(lateral) - 1.5);
+  // Peaks rise behind the trail, with lower foreground foothills that leave
+  // the small traveller visible. A wandering crest makes an actual ridgeline,
+  // with a saddle and visible descent on its far side rather than a plateau.
+  const shoulder = 1 - Math.exp(-away * away / (19 * 19));
+  const foothills = shoulder * (2.3 + row.mountain * 1.5
+    + .65 * Math.sin(position * .06 + row.phase));
+  const crest = -19 - 3.3 * Math.sin(position * .062 + row.phase);
+  const ridgeProfile = Math.exp(-(((lateral - crest) / 10.5) ** 2));
+  const peak = 14.5 + 3.5 * Math.sin(position * .105 + row.second);
+  const clearTrail = smooth(away / 5);
+  const ridge = row.mountain * ridgeProfile * peak * clearTrail;
+  const texture = shoulder * .24 * Math.sin(position * .085 + lateral * .12 + row.phase);
+  let height = row.height + foothills + ridge + texture;
+  if (row.river) {
+    const distance = Math.abs(position - row.river.center);
+    const weight = 1 - smooth((distance - row.river.width / 2) / (7 - row.river.width / 2));
+    height = blend(height, row.river.level - .16, weight);
   }
-  let height = .17 + .065 * Math.sin(position * .053 + phase)
-    + .04 * Math.sin(position * .019 + phase * .7)
-    + shoulder * .08 * Math.sin(position * .085 + lateral * .15 + phase)
-    + mountain * (.86 + shoulder * (.68 + .1 * Math.sin(position * .11 + phase)));
-  const river = riverAt(position, worldSeed);
-  if (river) {
-    const distance = Math.abs(position - river.center);
-    const weight = 1 - smooth((distance - river.width / 2) / (7 - river.width / 2));
-    height = blend(height, -.13, weight);
-  }
-  return clamp(height, -.15, 2);
+  return height;
+}
+
+function walkingHeightAt(s, seed) {
+  const row = terrainRowAt(s, seed);
+  const ground = terrainAt(s, row.x, seed);
+  if (!row.river) return ground;
+  const distance = Math.abs(s - row.river.center), bank = row.river.width / 2;
+  // A short approach joins each bank to the wooden deck without a step down
+  // into the stream. Root uses this profile for the trail and the traveller.
+  const deck = 1 - smooth((distance - bank - .45) / 2.2);
+  return blend(ground, row.river.bridgeHeight, deck);
+}
+
+export function trailProfileAt(s, seed = DEFAULT_SEED) {
+  const position = finite(s), worldSeed = seedOf(seed);
+  const row = terrainRowAt(position, worldSeed);
+  const width = .9 - row.mountain * .2 + row.valley * .1
+    + .065 * Math.sin(position * .13 + row.phase);
+  return { x: row.x, slope: row.slope, height: walkingHeightAt(position, worldSeed),
+    grade: (walkingHeightAt(position + .2, worldSeed) - walkingHeightAt(position - .2, worldSeed)) / .4,
+    width, mountain: row.mountain, valley: row.valley };
 }
 
 export function createJourney(seed = DEFAULT_SEED) {
@@ -229,6 +314,26 @@ function makeChunk(index, seed) {
     const river = riverAt(s, seed);
     if (!river || Math.abs(s - river.center) > river.width / 2 + .3) add(kind, variant, s, side, .7 + random() * .5);
   }
+  // Distant stands fill the wider view at the same small physical scale.
+  // Jittered groves leave clearings and expose the terrain between canopies.
+  for (const lane of [-4, -3, -2, 2, 3, 4]) for (let row = 0; row < 4; row++) {
+    const s = start + (row + .14 + random() * .72) * (CHUNK_LENGTH / 4);
+    const side = lane * 9.4 + (random() - .5) * 7.6;
+    const biome = biomeAt(s, seed), river = riverAt(s, seed);
+    if (river && Math.abs(s - river.center) < river.width / 2 + .6) continue;
+    const grove = .5 + Math.sin(s * .11 + seed * .000001) * .27
+      + Math.cos(side * .17 + s * .035) * .23;
+    const chance = { forest: .64, enchanted: .7, stream: .53, meadow: .08, mountain: .18 }[biome]
+      + grove * (biome === 'meadow' ? .14 : .24);
+    const roll = random();
+    if (roll < chance) {
+      const variant = biome === 'mountain' || random() < .32 ? 'pine' : random() < .3 ? 'birch' : 'oak';
+      add('tree', variant, s, side, .72 + random() * .65);
+    } else if (random() < .55) {
+      const kind = biome === 'mountain' ? 'rock' : biome === 'enchanted' ? 'mushroom' : 'flowers';
+      add(kind, kind === 'rock' ? 'granite' : kind === 'mushroom' ? 'glowing' : 'wild', s, side, .7 + random() * .7);
+    }
+  }
   if (random() < .5) {
     const choices = ['fox', 'deer', 'rabbit', 'bird'];
     add('animal', choices[Math.floor(random() * choices.length)], start + 3 + random() * 12,
@@ -251,18 +356,19 @@ export class TrailWorld {
     this.chunks = new Map();
     this.entities = [];
     this.chunkLength = CHUNK_LENGTH;
-    this.centerChunk = null;
+    this.centerChunk = null; this.radiusChunks = null;
     this.update(0);
   }
 
-  update(distance = 0) {
+  update(distance = 0, radius = 36) {
     const center = Math.floor(clamp(finite(distance), -MAX_DISTANCE, MAX_DISTANCE) / CHUNK_LENGTH);
-    if (center === this.centerChunk) return this.entities;
-    for (const index of this.chunks.keys()) if (Math.abs(index - center) > 2) this.chunks.delete(index);
-    for (let index = center - 2; index <= center + 2; index++) {
+    const span = clamp(Math.ceil(finite(radius, 36) / CHUNK_LENGTH), 2, 5);
+    if (center === this.centerChunk && span === this.radiusChunks) return this.entities;
+    for (const index of this.chunks.keys()) if (Math.abs(index - center) > span) this.chunks.delete(index);
+    for (let index = center - span; index <= center + span; index++) {
       if (!this.chunks.has(index)) this.chunks.set(index, makeChunk(index, this.seed));
     }
-    this.centerChunk = center;
+    this.centerChunk = center; this.radiusChunks = span;
     this.entities = [...this.chunks.values()].flatMap(chunk => chunk.entities)
       .sort((a, b) => a.s - b.s || a.id.localeCompare(b.id));
     return this.entities;

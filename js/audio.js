@@ -1,4 +1,4 @@
-import { riverAt } from './world.js';
+import { riverAt } from './world.js?v=3';
 
 // Original, melodic forest score and grounded footsteps. No downloads or timers.
 const BEAT = 60 / 68;

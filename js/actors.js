@@ -89,7 +89,16 @@ function standingTraveller(r, p) {
   const movement = walking && !p.reducedMotion;
   const breath = Math.sin(p.time * 1.8) * .014;
   const bob = movement ? Math.cos(phase * 2) * .026 : breath;
-  const P = localFrame(p.x, p.y, p.z, -Math.PI / 2);
+  const baseP = localFrame(p.x, p.y, p.z, p.yaw);
+  // Keep the hips over the planted feet while the upper body balances against
+  // the incline. The pack and arms share this frame, so they follow the lean.
+  const lean = Math.max(-.16, Math.min(.2, p.grade * .36));
+  const P = (forward, side, up) => baseP(forward + lean * Math.max(0, up - .95), side, up);
+  const groundPoint = (forward, side, up = 0) => {
+    const point = baseP(forward, side, 0);
+    const ground = p.groundAt ? finite(p.groundAt(point[0], point[1]), p.z) : p.z + forward * p.grade;
+    return [point[0], point[1], ground + up];
+  };
   const hip = 1.07 + bob, shoulder = 1.79 + bob;
   r.shadow(p.x, p.y, p.z, .39, 1);
 
@@ -97,15 +106,16 @@ function standingTraveller(r, p) {
   for (const side of [-1, 1]) {
     const q = phase + (side === 1 ? Math.PI : 0);
     const swing = movement ? Math.sin(q) : 0;
-    const lift = movement ? Math.max(0, Math.cos(q)) * .21 : 0;
-    const footA = .32 * swing;
+    const lift = movement ? Math.max(0, Math.cos(q)) * (.21 + Math.max(0, p.grade) * .15) : 0;
+    const footA = .32 * swing * (1 - Math.abs(p.grade) * .24);
+    const footGround = groundPoint(footA, side * .165)[2] - p.z;
     const h = P(0, side * .145, hip);
-    const knee = P(footA * .47 + lift * .7, side * .16, .58 + lift * .38);
-    const ankle = P(footA, side * .165, .11 + lift);
+    const knee = P(footA * .47 + lift * .7, side * .16, .58 + lift * .38 + footGround * .55);
+    const ankle = groundPoint(footA, side * .165, .11 + lift);
     bone(r, h, knee, .15, .115, C.trousers);
     bone(r, knee, ankle, .115, .075, C.trousers);
-    bone(r, P(footA - .065, side * .165, .09 + lift), P(footA + .17, side * .165, .075 + lift), .095, .09, C.boot);
-    bone(r, P(footA - .07, side * .165, .035 + lift), P(footA + .18, side * .165, .035 + lift), .055, .055, C.bootSole);
+    bone(r, groundPoint(footA - .065, side * .165, .09 + lift), groundPoint(footA + .17, side * .165, .075 + lift), .095, .09, C.boot);
+    bone(r, groundPoint(footA - .07, side * .165, .035 + lift), groundPoint(footA + .18, side * .165, .035 + lift), .055, .055, C.bootSole);
   }
 
   bone(r, P(-.015, 0, hip + .05), P(.025, 0, shoulder), .29, .33, C.coat);
@@ -128,15 +138,25 @@ function standingTraveller(r, p) {
   const rightHand = P(.29 + armSwing * .23, .37, shoulder - .5);
   bone(r, P(.01, .32, shoulder - .015), rightElbow, .12, .095, C.coat);
   bone(r, rightElbow, rightHand, .09, .06, C.coatLight);
-  bone(r, P(.46 + armSwing * .45, .42, .045), P(.23 + armSwing * .2, .38, shoulder - .32), .027, .024, C.staff);
+  bone(r, groundPoint(.46 + armSwing * .45, .42, .045), P(.23 + armSwing * .2, .38, shoulder - .32), .027, .024, C.staff);
   ball(r, rightHand, .073, C.skin);
   bone(r, P(.02, 0, shoulder - .01), P(.015, 0, shoulder + .18), .105, .095, C.skin);
   head(r, P, shoulder + .34, .025, Math.sin(p.time * .3));
   lantern(r, P, -.23, -.31, hip - .02, p.night);
 }
 
+function restingFrame(p) {
+  const base = localFrame(p.x, p.y, p.z, p.yaw);
+  return (forward, side, up) => {
+    const point = base(forward, side, up);
+    const ground = p.groundAt ? finite(p.groundAt(point[0], point[1]), p.z) : p.z + forward * p.grade;
+    point[2] += ground - p.z;
+    return point;
+  };
+}
+
 function snackingTraveller(r, p) {
-  const P = localFrame(p.x, p.y, p.z, -Math.PI / 2);
+  const P = restingFrame(p);
   const breath = Math.sin(p.time * 1.8) * .012;
   const sip = p.reducedMotion ? .25 : Math.pow(Math.max(0, Math.sin(p.modeTime * .9 - 1)), 3);
   r.shadow(p.x, p.y, p.z, .57, 1);
@@ -173,7 +193,7 @@ function snackingTraveller(r, p) {
 }
 
 function sleepingTraveller(r, p) {
-  const P = localFrame(p.x, p.y, p.z, -Math.PI / 2);
+  const P = restingFrame(p);
   const breath = p.reducedMotion ? 0 : Math.sin(p.time * 1.3) * .012;
   r.shadow(p.x, p.y, p.z, .75, 1);
   oval(r, P(.2, 0, .07), .43, 1.03, .07, C.bedroll);
@@ -194,13 +214,16 @@ function sleepingTraveller(r, p) {
   lantern(r, P, -.89, -.53, .12, true);
 }
 
-/** Draw a human traveller facing the forward direction (world -Y). */
+/** Draw a human traveller following the trail's heading and local incline. */
 export function drawTraveller(r, options = {}) {
   const p = {
     x: finite(options.x), y: finite(options.y), z: finite(options.z),
     time: finite(options.time), distance: finite(options.distance),
     mode: options.mode || 'paused', modeTime: finite(options.modeTime),
     night: !!options.night, reducedMotion: !!options.reducedMotion,
+    yaw: finite(options.yaw, -Math.PI / 2),
+    grade: Math.max(-.65, Math.min(.65, finite(options.grade))),
+    groundAt: typeof options.groundAt === 'function' ? options.groundAt : null,
   };
   if (p.mode === 'sleep') sleepingTraveller(r, p);
   else if (p.mode === 'snack') snackingTraveller(r, p);
