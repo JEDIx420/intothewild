@@ -6,7 +6,11 @@
 
 Walk a winding trail through woods, streams, meadows, mountain passes and enchanted groves. Meet the wildlife, pause for a warm drink, or unroll your bed and wake in another morning. There is nowhere you need to be.
 
-![The expanded autumn wilderness in Into the Wild](docs/into-the-wild.jpg)
+![The small traveller in a wide winter forest](docs/into-the-wild.jpg)
+
+A mountain pass, rendered by the same game engine:
+
+![A winding path below a rocky mountain ridge](docs/mountain-pass.png)
 
 ## Play
 
