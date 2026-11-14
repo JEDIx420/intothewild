@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createJourney, stepJourney, setActivity, environment, pathAt, terrainAt,
-  biomeAt, riverAt, pathSlopeAt, trailProfileAt, TrailWorld, serializeJourney, restoreJourney,
+  biomeAt, riverAt, waterAt, swampPoolsAt, pathSlopeAt, trailProfileAt, TrailWorld, serializeJourney, restoreJourney,
 } from '../js/world.js';
 
 function advance(state, seconds) {
@@ -140,12 +140,12 @@ test('streaming retains exactly five chunks with bounded entities, including sce
     const distance = iteration * 1031.7;
     world.update(distance);
     assert.equal(world.chunks.size, 5);
-    assert.ok(world.entities.length <= 230);
+    assert.ok(world.entities.length <= 400);
     assert.equal(new Set(world.entities.map(entity => entity.id)).size, world.entities.length);
     const center = Math.floor(distance / 18);
     assert.deepEqual([...world.chunks.keys()].sort((a, b) => a - b), [center - 2, center - 1, center, center + 1, center + 2]);
     for (const chunk of world.chunks.values()) {
-      assert.ok(chunk.entities.length <= 46);
+      assert.ok(chunk.entities.length <= 80);
       for (const entity of chunk.entities) {
         assert.ok(entity.s >= chunk.start && entity.s < chunk.end);
         if (entity.kind === 'tree') assert.ok(Math.abs(entity.side) > 2.5);
@@ -178,7 +178,7 @@ test('biomes form coherent stretches and the first stream follows the opening fo
   }
   assert.equal(changes[0].biome, 'stream');
   assert.ok(changes[0].s >= 38 && changes[0].s <= 44);
-  assert.deepEqual(new Set(changes.map(change => change.biome)), new Set(['forest', 'stream', 'meadow', 'mountain', 'enchanted']));
+  assert.deepEqual(new Set(changes.map(change => change.biome)), new Set(['forest', 'stream', 'meadow', 'mountain', 'swamp', 'enchanted']));
 });
 
 test('winding paths and elevated terrain remain continuous through region changes', () => {
@@ -235,7 +235,7 @@ test('a wider view streams bounded deterministic chunks and scenery on both hill
   for (const distance of [120, 7000, 107, 1e8, 0]) {
     world.update(distance, 60);
     assert.equal(world.chunks.size, 9);
-    assert.ok(world.entities.length <= 414);
+    assert.ok(world.entities.length <= 720);
     assert.ok(world.entities.every(e => Math.abs(e.side) < 44));
   }
   assert.equal(JSON.stringify(world.entities), initial);
@@ -243,7 +243,7 @@ test('a wider view streams bounded deterministic chunks and scenery on both hill
   assert.equal(world.chunks.size, 5);
   world.update(0, 84);
   assert.equal(world.chunks.size, 11);
-  assert.ok(world.entities.length <= 506);
+  assert.ok(world.entities.length <= 880);
   world.update(0, 1e9);
   assert.equal(world.chunks.size, 11);
 });
@@ -280,4 +280,48 @@ test('mountain ridges have visible relief behind the trail and lower foreground 
     assert.ok(highestFar > 12, 'distant ridgelines must rise several tree heights above the trail');
     assert.ok(highestNear < 5, 'foreground terrain should not hide the traveller in a trench');
   }
+});
+
+test('wetland pools have real basins, dry trails and continuous banks', () => {
+  for (const seed of [1, 42, 532]) {
+    const pools = new Map();
+    for (let s = 220; s < 285; s += .5) {
+      for (const pool of swampPoolsAt(s, seed)) pools.set(pool.id, pool);
+      assert.equal(waterAt(s, pathAt(s, seed), seed), null, 'the traveller keeps a dry route through wetlands');
+    }
+    assert.ok(pools.size >= 4);
+    for (const pool of pools.values()) {
+      assert.equal(waterAt(pool.s, pool.x, seed)?.kind, 'swamp');
+      close(terrainAt(pool.s, pool.x, seed), pool.level - pool.depth);
+      const outer = pool.x + pool.rx * 1.5;
+      assert.equal(waterAt(pool.s, outer, seed), null);
+      assert.ok(Math.abs(terrainAt(pool.s, outer + .001, seed) - terrainAt(pool.s, outer - .001, seed)) < .01);
+      assert.ok(terrainAt(pool.s, outer, seed) > pool.level);
+    }
+  }
+});
+
+test('habitats populate all 24 species, 12 tree silhouettes, water life and horse herds', () => {
+  const world = new TrailWorld(28), species = new Set(), trees = new Set();
+  let horses = false, waterLife = false, crocodiles = false;
+  for (let distance = 0; distance < 3600; distance += 54) {
+    world.update(distance);
+    const herds = new Map();
+    for (const e of world.entities) {
+      if (e.kind === 'tree') trees.add(e.variant);
+      if (e.kind !== 'animal') continue;
+      species.add(e.variant);
+      if (e.variant === 'horse' && e.group) herds.set(e.group, (herds.get(e.group) || 0) + 1);
+      if (e.variant === 'fish' || e.variant === 'otter') {
+        assert.equal(e.water?.kind, 'stream'); waterLife = true;
+      }
+      if (e.variant === 'crocodile') {
+        assert.equal(e.water?.kind, 'swamp'); crocodiles = true;
+      }
+    }
+    horses ||= [...herds.values()].some(count => count >= 3);
+  }
+  assert.equal(species.size, 24);
+  assert.equal(trees.size, 12);
+  assert.ok(horses && waterLife && crocodiles);
 });

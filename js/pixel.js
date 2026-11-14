@@ -115,22 +115,55 @@ export class Raster {
     if (p.d < this.depth[i]) return;
     this.depth[i] = p.d; this.pixels[i] = Array.isArray(color) ? rgb(...color) : color;
   }
+  // Soft contact shadows carry coverage, rather than a binary, stippled oval.
+  // Canopy lobes are placed on the terrain by the scene; this small stamp also
+  // serves feet, stones and creatures without painting over elevated objects.
+  triangle(a, b, c, color) {
+    const p = this.project(...a), q = this.project(...b), v = this.project(...c), ink = rgb(...color);
+    const x0 = Math.max(0, Math.floor(Math.min(p.sx, q.sx, v.sx))), x1 = Math.min(this.width - 1, Math.ceil(Math.max(p.sx, q.sx, v.sx)));
+    const y0 = Math.max(0, Math.floor(Math.min(p.sy, q.sy, v.sy))), y1 = Math.min(this.height - 1, Math.ceil(Math.max(p.sy, q.sy, v.sy)));
+    const area = (q.sy - v.sy) * (p.sx - v.sx) + (v.sx - q.sx) * (p.sy - v.sy);
+    if (Math.abs(area) < .00001) return;
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const aa = ((q.sy - v.sy) * (x + .5 - v.sx) + (v.sx - q.sx) * (y + .5 - v.sy)) / area;
+      const bb = ((v.sy - p.sy) * (x + .5 - v.sx) + (p.sx - v.sx) * (y + .5 - v.sy)) / area, cc = 1 - aa - bb;
+      if (aa < 0 || bb < 0 || cc < 0) continue;
+      const d = aa * p.d + bb * q.d + cc * v.d, i = y * this.width + x;
+      if (d > this.depth[i]) { this.depth[i] = d; this.pixels[i] = ink; }
+    }
+  }
+  line(a, b, color, width = 1) {
+    const p = this.project(...a), q = this.project(...b);
+    const steps = Math.max(1, Math.ceil(Math.max(Math.abs(q.sx - p.sx), Math.abs(q.sy - p.sy))));
+    const ink = Array.isArray(color) ? rgb(...color) : color;
+    for (let k = 0; k <= steps; k++) {
+      const t = k / steps, x = Math.round(lerp(p.sx, q.sx, t)), y = Math.round(lerp(p.sy, q.sy, t));
+      if (x < 0 || y < 0 || x >= this.width || y >= this.height) continue;
+      const i = y * this.width + x, d = lerp(p.d, q.d, t);
+      if (d >= this.depth[i]) { this.depth[i] = d; this.pixels[i] = ink; }
+      if (width > 1 && x + 1 < this.width && d >= this.depth[i + 1]) { this.depth[i + 1] = d; this.pixels[i + 1] = ink; }
+    }
+  }
   shadow(x, y, z, radius, strength = 1) {
-    const p = this.project(x, y, z), rx = Math.max(1, radius * this.scale), ry = rx * .5;
+    const p = this.project(x, y, z), rx = Math.max(1, radius * this.scale), ry = Math.max(1, rx * .5);
+    const opacity = clamp(strength * 55, 0, 92);
     for (let iy = Math.max(0, Math.floor(p.sy - ry)); iy <= Math.min(this.height - 1, Math.ceil(p.sy + ry)); iy++) {
       for (let ix = Math.max(0, Math.floor(p.sx - rx)); ix <= Math.min(this.width - 1, Math.ceil(p.sx + rx)); ix++) {
-        const dx = (ix - p.sx) / rx, dy = (iy - p.sy) / ry;
-        if (dx * dx + dy * dy + (bayer(ix, iy) - .5) * .14 > 1) continue;
+        const dx = (ix + .5 - p.sx) / rx, dy = (iy + .5 - p.sy) / ry;
+        const q = dx * dx + dy * dy;
+        if (q >= 1) continue;
         const i = iy * this.width + ix;
-        this.shadows[i] = Math.max(this.shadows[i], strength > 1 ? 2 : 1);
+        if (Math.abs(this.groundZ[i] - p.d) > radius * 1.25 + .3) continue;
+        const shade = opacity * (1 - q) * (1 - q);
+        this.shadows[i] = Math.min(100, this.shadows[i] + shade);
       }
     }
   }
   applyShadows() {
     for (let i = 0; i < this.pixels.length; i++) {
       if (!this.shadows[i] || this.depth[i] < -1e8 || Math.abs(this.depth[i] - this.groundZ[i]) > .04) continue;
-      const c = this.pixels[i], factor = this.shadows[i] > 1 ? .51 : .69;
-      this.pixels[i] = rgb((c & 255) * factor, (c >> 8 & 255) * factor, (c >> 16 & 255) * Math.min(1, factor + .14));
+      const c = this.pixels[i], factor = 1 - this.shadows[i] / 255;
+      this.pixels[i] = rgb((c & 255) * factor, (c >> 8 & 255) * factor, (c >> 16 & 255) * (factor + .025));
     }
     this.shadows.fill(0);
   }
@@ -162,25 +195,49 @@ export class Raster {
     return { width: w, height: h, pixels: p, depth: d, ox: this.ox - x0, oy: this.oy - y0 };
   }
   blit(sprite, x, y, z = 0, sway = 0) {
-    const p = this.project(x, y, z), left = Math.round(p.sx - sprite.ox), top = Math.round(p.sy - sprite.oy);
-    for (let row = Math.max(0, -top); row < Math.min(sprite.height, this.height - top); row++) {
-      const wind = Math.round(sway * clamp((sprite.oy - row - 10) / 60, 0, 1));
-      for (let col = Math.max(0, -left - wind); col < Math.min(sprite.width, this.width - left - wind); col++) {
-        const si = row * sprite.width + col;
-        if (sprite.depth[si] < -1e8) continue;
-        const i = (top + row) * this.width + left + col + wind, d = p.d + sprite.depth[si];
+    const p = this.project(x, y, z), left = p.sx - sprite.ox, top = p.sy - sprite.oy;
+    const sw = sprite.width, sh = sprite.height, sd = sprite.depth, sp = sprite.pixels;
+    // Sprites formerly rounded their screen position independently of the
+    // heightfield. Subpixel coverage keeps their roots attached while the
+    // camera moves, and lets a light breeze bend a crown without one-pixel
+    // jumps. This does not change the world's native pixel scale.
+    for (let iy = Math.max(0, Math.floor(top)); iy < Math.min(this.height, Math.ceil(top + sh)); iy++) {
+      const sourceY = iy - top, row = Math.floor(sourceY), fy = sourceY - row;
+      const bend = clamp((sprite.oy - sourceY - 19) / 45, 0, 1);
+      const wind = sway * bend * bend;
+      const start = left + wind;
+      for (let ix = Math.max(0, Math.floor(start)); ix < Math.min(this.width, Math.ceil(start + sw)); ix++) {
+        const sourceX = ix - start, col = Math.floor(sourceX), fx = sourceX - col;
+        let coverage = 0, red = 0, green = 0, blue = 0, dz = 0;
+        for (let yy = 0; yy < 2; yy++) {
+          const sy = row + yy;
+          if (sy < 0 || sy >= sh) continue;
+          const wy = yy ? fy : 1 - fy;
+          if (wy < .001) continue;
+          for (let xx = 0; xx < 2; xx++) {
+            const sx = col + xx;
+            if (sx < 0 || sx >= sw) continue;
+            const si = sy * sw + sx;
+            if (sd[si] < -1e8) continue;
+            const weight = wy * (xx ? fx : 1 - fx), color = sp[si];
+            coverage += weight; dz += sd[si] * weight;
+            red += (color & 255) * weight; green += (color >> 8 & 255) * weight; blue += (color >> 16 & 255) * weight;
+          }
+        }
+        if (coverage < .035) continue;
+        const d = p.d + dz / coverage, i = iy * this.width + ix;
         if (d <= this.depth[i]) continue;
-        // Open a soft pixel cutaway through foreground leaves when they hide a traveller.
-        // The depth check preserves trees that are genuinely behind the character.
-        let cut = false;
+        let visible = 1;
         for (const zone of this.cutaways || []) {
           if (d <= zone.d) continue;
-          const dx = (left + col + wind - zone.x) / zone.rx, dy = (top + row - zone.y) / zone.ry;
-          const q = dx * dx + dy * dy;
-          if (q < 1 && bayer(left + col + wind, top + row) < .93 * Math.pow(1 - q, .22)) { cut = true; break; }
+          const dx = (ix - zone.x) / zone.rx, dy = (iy - zone.y) / zone.ry, q = dx * dx + dy * dy;
+          if (q < 1) visible = Math.min(visible, 1 - .94 * Math.pow(1 - q, .35));
         }
-        if (cut) continue;
-        this.depth[i] = d; this.pixels[i] = sprite.pixels[si];
+        const old = this.pixels[i], remainder = 1 - coverage * visible;
+        this.pixels[i] = rgb(red * visible + (old & 255) * remainder,
+          green * visible + (old >> 8 & 255) * remainder,
+          blue * visible + (old >> 16 & 255) * remainder);
+        if (coverage * visible > .45) this.depth[i] = d;
       }
     }
   }

@@ -4,29 +4,46 @@
 
 [Play in your browser](https://jedix420.github.io/intothewild/)
 
-Walk a winding trail through woods, streams, meadows, mountain passes and enchanted groves. Meet the wildlife, pause for a warm drink, or unroll your bed and wake in another morning. There is nowhere you need to be.
+Walk a winding trail through mixed woodland, lively streams, open meadows, mountain passes, willow wetlands and enchanted groves. Meet the inhabitants, pause for a warm drink, or unroll your bed and wake in another morning. There is nowhere you need to be.
 
-![The small traveller in a wide winter forest](docs/into-the-wild.jpg)
-
-A mountain pass, rendered by the same game engine:
-
-![A winding path below a rocky mountain ridge](docs/mountain-pass.png)
+![The living woodland and its small traveller](docs/into-the-wild.jpg)
 
 ## Play
 
 | Control | Action |
 | --- | --- |
-| Walk button / Space / Up arrow | Walk forward or pause |
+| Walk / Space / Up arrow | Walk forward or pause |
+| Touch or click an animal | Discover its reaction; give it a moment before trying again |
+| Tab, then Enter | Interact with nearby wildlife using the keyboard |
 | Snack / E | Sit and have a snack; press again to stand |
 | Sleep / R | Rest until the next morning; press again to wake early |
-| Speaker / M | Enable or mute the original forest soundscape |
-| Notebook / J | Read field notes and controls |
+| Speaker / M | Listen or mute |
+| Notebook / J | Field notes, music selection and credits |
 
-The wilderness fills a responsive panorama while the traveller keeps the original small scale. The camera reveals more terrain, with winding forest paths, climbs, ridges and descents into river valleys. The on-screen controls also work with touch. A day lasts about five minutes; seasons change every two game days. Sleeping advances the clock, so you can experience later seasons without waiting. Foxes patrol and sniff, deer walk and graze, rabbits hop, and birds flutter along the trail. Wildlife keeps moving while you pause, snack or sleep. Rare magical inhabitants appear too. Your place and sightings save automatically in this browser. If storage is unavailable, the game still runs for the current session.
+The panorama fills the available screen while the traveller keeps a small, detailed scale. The path climbs, turns beneath ridges and descends through valleys. A day lasts about five minutes; seasons change every two game days. Sleeping advances the clock. Your place and discoveries save automatically in this browser. A shared `?seed=12345` trail has its own save and leaves your main journey intact.
 
-Music and forest ambience start with your first Walk, Snack or Sleep tap (or the speaker button). A calm melody and harmony accompany the journey, with footsteps matching your walking pace and the ground beneath you. The speaker button or M mutes the sound; your choice is remembered.
+## A living wilderness
 
-All scenery and sound are generated locally. No login, tracking, remote AI calls or runtime packages. The initial journey uses a stable seed; an optional `?seed=12345` starts a different seeded route.
+There are **24 inhabitants**: foxes, deer, rabbits, robins, squirrels, badgers, boars, wolves, bears, lynx, wild horses, mountain ibex, owls, eagles, otters, ducks, herons, crocodiles, frogs, trout, butterflies, dragonflies, moonlit stags and lantern spirits. Each belongs to an appropriate habitat. Horses appear in herds, trout jump without needing a tap, and crocodiles spend time basking beside wetland pools.
+
+Touches draw from **105 species-specific responses**, with different movement and poses: approaching, startling, bounding away, rearing, grazing, listening, opening jaws, diving, splashing and more. Reactions begin at the animal’s current position and blend back into its usual activity. Animals keep moving while you pause or take a snack. The field notes remember the species you discover.
+
+**Twelve tree silhouettes** mix with grass, ferns, flowering patches, shrubs, reeds, lilies, mushrooms and fallen logs. Foliage moves in coherent wind while trunks stay rooted. Rolling ground, exposed ridge faces, soil and moss patches, terrain-following shadows and shallow water basins give each habitat a different character. Streams have moving currents, foam, ripples and aquatic life.
+
+![A winding mountain pass with exposed ridge faces](docs/mountain-pass.png)
+
+![The willow wetlands, with pools and resident wildlife](docs/wetlands.png)
+
+## Soundtrack
+
+Four recorded tracks follow the landscape, with gentle crossfades and quiet nature ambience. There are no footstep effects. Music starts after a gesture; the speaker remembers your mute preference. Open Field notes to choose another song.
+
+- **Forest** — syncopika — CC BY 3.0.
+- **A Warm Fireplace** — MouthlessGames — CC BY 3.0.
+- **It’s Getting Freezing Cold** — MouthlessGames — CC BY 3.0.
+- **Vaporware** — The Cynic Project — CC0 1.0.
+
+The recordings are bundled with the game; no external music service is needed. See [full track credits, original sources and licences](docs/music-sources.md). Downloaded music totals about 5.6 MB; the game loads tracks as needed and keeps at most two decoded recordings.
 
 ## Run locally
 
@@ -45,19 +62,18 @@ npm test
 
 ## How it works
 
-- The software renderer adapts its canvas to the available screen area while keeping pixel figures small. It uses a fixed orthographic camera, depth testing, stepped colour ramps and dithering. A projected heightfield creates real slopes and correct terrain occlusion.
-- A bounded, seeded window of five to eleven trail sections is streamed around the traveller, depending on the view. Old sections are discarded; tree sprites have a bounded cache.
-- Terrain, wildlife and scenery are deterministic. The journey save stores a seed, distance, clock and limited encounter history, rather than the whole world.
-- Wildlife follows deterministic patrols with gentle stops, turning, gait and hop animation; land animals stay out of river water.
-- Walking, sitting and sleeping use articulated procedural animation. The traveller follows bends, leans with the grade, and places boots and the walking stick on the actual terrain. Daylight, weather and seasons affect the landscape. The audio is generated with the Web Audio API after a user gesture.
-- The app pauses simulation when hidden and resumes without a large elapsed-time jump. Reduced-motion preferences suppress foliage sway and falling particles.
+The dependency-free JavaScript renderer combines a projected heightfield, depth testing, small procedural models and cached tree sprites. World-space vegetation and softly filtered sprite translation avoid independent tree snapping as the camera moves. Terrain caches and streamed scenery keep the visible world bounded rather than accumulating an entire endless map.
+
+The generator retains five to eleven nearby trail chunks. Saves contain only the seed, distance, clock and a limited field guide. Wildlife has deterministic patrols and a bounded runtime reaction director. Aquatic patrols respect stream banks, bridge clearance and wetland pool boundaries. The traveller and land animals use the actual terrain height for their feet.
+
+Simulation stops in a hidden tab, and audio suspends while preserving its position. Reduced-motion preferences suppress foliage sway and decorative falling particles. Canvas wildlife also has labelled keyboard-accessible interaction controls.
 
 ## GitHub Pages
 
-This is a static site with relative asset paths. Publish `main` from `/ (root)` in **Settings → Pages → Deploy from a branch**. `.nojekyll` keeps the files unchanged. The site does not need a custom build workflow.
+This is a static site with relative asset paths. Publish `main` from `/ (root)` in **Settings → Pages → Deploy from a branch**. `.nojekyll` keeps the files unchanged. No build workflow is required.
 
 ## Credits
 
-The pixel-rendering foundation is adapted from [Pixel Plays](https://github.com/amirmushichge/pixel-plays) by Amir Mushich, under the MIT licence. Its fixed perspective, small realism and thoughtful shading inspired this game. Original upstream music is not included. The wilderness, journey systems, characters, animals, UI and procedural soundscape are created for Into the Wild.
+The pixel-rendering foundation is adapted from [Pixel Plays](https://github.com/amirmushichge/pixel-plays) by Amir Mushich under the MIT licence. Its fixed perspective and small, detailed figures inspired this game. Upstream music is not included. The wilderness, journey systems, procedural characters, vegetation, wildlife interactions and interface are created for Into the Wild.
 
-See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the upstream licence.
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for code and music licences. The MIT code licence does not replace the recordings’ individual licences.

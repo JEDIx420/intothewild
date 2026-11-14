@@ -1,0 +1,65 @@
+{
+  "verified": "2026-11-14",
+  "tracks": [
+    {
+      "id": "forest",
+      "title": "Forest",
+      "artist": "syncopika",
+      "file": "forest.mp3",
+      "source": "https://opengameart.org/content/forest",
+      "originalFile": "https://opengameart.org/sites/default/files/forest_0.mp3",
+      "license": "CC BY 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+      "use": "Woodlands and rivers; orchestral music with nature recordings",
+      "bytes": 1141111,
+      "sha256": "9729786a4f64ba63a7499b19951f56ed31fd419690d0fd97c6fe776e1668b405",
+      "durationSeconds": 81.476,
+      "changes": "Loudness normalized to -18 LUFS / -2 dBTP target; encoded as 112 kb/s stereo MP3 at 44.1 kHz. Runtime fades and mixing with game ambience."
+    },
+    {
+      "id": "warm-fireplace",
+      "title": "A Warm Fireplace",
+      "artist": "MouthlessGames",
+      "file": "warm-fireplace.mp3",
+      "source": "https://opengameart.org/content/snowy-cozyness-calm-pianoguitar",
+      "originalFile": "https://opengameart.org/sites/default/files/A%20Warm%20Fireplace_0.ogg",
+      "license": "CC BY 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+      "use": "Meadows and snack breaks; calm piano and guitar",
+      "bytes": 1126497,
+      "sha256": "2e2a5600c0013937cf7bccd0579b00043efac852abc1ad3b9c270721bd8dabc1",
+      "durationSeconds": 80.431,
+      "changes": "Loudness normalized to -18 LUFS / -2 dBTP target; encoded as 112 kb/s stereo MP3 at 44.1 kHz. Runtime fades and mixing with game ambience."
+    },
+    {
+      "id": "freezing-cold",
+      "title": "It's Getting Freezing Cold",
+      "artist": "MouthlessGames",
+      "file": "freezing-cold.mp3",
+      "source": "https://opengameart.org/content/snowy-cozyness-calm-pianoguitar",
+      "originalFile": "https://opengameart.org/sites/default/files/It%27s%20Getting%20Freezing%20Cold_0.ogg",
+      "license": "CC BY 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+      "use": "High passes, winter and evening; calm piano and guitar",
+      "bytes": 1006553,
+      "sha256": "0fbcc34ae68836d648ecbe078c3586eee2b3e993bb192ae164df39876ced9bc4",
+      "durationSeconds": 71.863,
+      "changes": "Loudness normalized to -18 LUFS / -2 dBTP target; encoded as 112 kb/s stereo MP3 at 44.1 kHz. Runtime fades and mixing with game ambience."
+    },
+    {
+      "id": "vaporware",
+      "title": "Vaporware",
+      "artist": "The Cynic Project",
+      "file": "vaporware.mp3",
+      "source": "https://opengameart.org/content/calm-piano-1-vaporware",
+      "originalFile": "https://opengameart.org/sites/default/files/003_Vaporware_2.mp3",
+      "license": "CC0 1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "use": "Enchanted groves, wetlands and moonlight; ambient pads and piano",
+      "bytes": 2310310,
+      "sha256": "8d954017299e01d296d3578818ca44438f0c3e69c653bb25e1e819305550cb60",
+      "durationSeconds": 164.989,
+      "changes": "Loudness normalized to -18 LUFS / -2 dBTP target; encoded as 112 kb/s stereo MP3 at 44.1 kHz. Runtime fades and mixing with game ambience."
+    }
+  ]
+}

@@ -4,7 +4,7 @@ import { resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
-const types = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png' };
+const types = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.md': 'text/plain' };
 const port = Number(process.env.PORT) || 5300;
 createServer(async (req, res) => {
   try {
@@ -16,7 +16,8 @@ createServer(async (req, res) => {
     }
     if ((await stat(path)).isDirectory()) path = resolve(path, 'index.html');
     const body = await readFile(path);
-    res.writeHead(200, { 'Content-Type': (types[extname(path)] || 'application/octet-stream') + '; charset=utf-8', 'Cache-Control': 'no-cache' });
+    const type = types[extname(path)] || 'application/octet-stream';
+    res.writeHead(200, { 'Content-Type': type + (type.startsWith('text/') || type === 'application/json' ? '; charset=utf-8' : ''), 'Cache-Control': 'no-cache' });
     res.end(body);
   } catch { res.writeHead(404).end('Not found'); }
 }).listen(port, '0.0.0.0', () => console.log(`Into the Wild: http://localhost:${port}`));

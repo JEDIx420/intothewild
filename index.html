@@ -7,7 +7,7 @@
   <meta name="description" content="A little journey, without an end. Wander a changing wilderness, meet its curious inhabitants, and stop whenever you please.">
   <title>Into the Wild — a little journey</title>
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
-  <link rel="stylesheet" href="./styles.css?v=3">
+  <link rel="stylesheet" href="./styles.css?v=4">
 </head>
 <body>
   <main class="journey" aria-label="Into the Wild">
@@ -34,12 +34,14 @@
         </div>
       </div>
       <div class="canvas-wrap">
-        <canvas id="c" width="960" height="460" aria-label="An endless pixel-art wilderness. Use the Walk, Snack and Sleep buttons below to guide your traveller.">Your browser needs canvas support to show the wilderness.</canvas>
+        <canvas id="c" width="960" height="460" aria-label="An endless pixel-art wilderness. Touch or click an animal to see its reaction. Use the Walk, Snack and Sleep buttons below to guide your traveller." aria-describedby="interaction-hint">Your browser needs canvas support to show the wilderness.</canvas>
+        <div id="wildlife-targets" aria-label="Nearby wildlife" role="group"></div>
+        <div id="interaction-ripple" aria-hidden="true"></div>
         <div id="sleep-overlay" aria-hidden="true"></div>
       </div>
       <div class="scene-foot">
         <span id="distance-label">The first few steps</span>
-        <span class="quiet-mark" aria-hidden="true"><svg viewBox="0 0 40 14" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"><path d="M1 12h10l5-8 5 8h18M13 9l3-5 3 5M25 12l4-6 4 6"/></svg></span>
+        <span id="interaction-hint">Touch the wildlife. See what happens.</span>
       </div>
     </section>
 
@@ -70,15 +72,22 @@
     </header>
     <section class="journal-section" aria-labelledby="sightings-heading">
       <h3 id="sightings-heading">Little encounters</h3>
+      <p class="sightings-count" id="sightings-count"></p>
       <div class="sightings" id="sightings"><p class="journal-empty">A fresh page. The forest will fill it.</p></div>
     </section>
     <section class="journal-section how-to" aria-labelledby="how-to-heading">
       <h3 id="how-to-heading">A slower kind of adventure</h3>
-      <p>Follow the trail, stop for a snack, or sleep beneath the sky. Music and forest sounds begin with your first step; the speaker button lets you mute them. The wilderness changes with the hour and season, and its animals wander even when you stop.</p>
+      <p>Follow the trail, stop for a snack, or sleep beneath the sky. Touch or click the wildlife and wait for its response: curious, cautious, playful, or startled. Give it a moment, then try again. You can also use Tab and Enter to interact. The wilderness changes with the hour and season, and its inhabitants keep living when you stop.</p>
       <dl class="key-guide"><div><dt><kbd>Space</kbd></dt><dd>Walk or pause</dd></div><div><dt><kbd>E</kbd></dt><dd>Have a snack</dd></div><div><dt><kbd>R</kbd></dt><dd>Sleep</dd></div><div><dt><kbd>M</kbd></dt><dd>Sound on or off</dd></div><div><dt><kbd>J</kbd></dt><dd>Open field notes</dd></div></dl>
     </section>
-    <footer class="journal-credits"><p>Made in the spirit of <a href="https://github.com/amirmushichge/pixel-plays" target="_blank" rel="noopener noreferrer">Pixel Plays</a> by Amir Mushich. Renderer code adapted under the MIT licence.</p><p>Forest ambience and music are original sounds generated in your browser.</p></footer>
+    <section class="journal-section music-section" aria-labelledby="music-heading">
+      <h3 id="music-heading">Music for the trail</h3>
+      <p id="track-name">A little music for the journey</p>
+      <button type="button" class="music-next" id="music-next">Another song <span aria-hidden="true">↗</span></button>
+      <p class="music-note">Four gentle recordings follow the landscape. Music begins after a tap; use the speaker to listen or mute.</p>
+    </section>
+    <footer class="journal-credits"><p>Made in the spirit of <a href="https://github.com/amirmushichge/pixel-plays" target="_blank" rel="noopener noreferrer">Pixel Plays</a> by Amir Mushich. Renderer code adapted under the MIT licence.</p><p>Music by syncopika, MouthlessGames and The Cynic Project. <a href="./docs/music-sources.md" target="_blank" rel="noopener noreferrer">Track credits and licences</a>. Nature ambience is generated in your browser.</p></footer>
   </dialog>
-  <script type="module" src="./js/main.js?v=3"></script>
+  <script type="module" src="./js/main.js?v=4"></script>
 </body>
 </html>

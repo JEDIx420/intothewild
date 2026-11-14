@@ -1,19 +1,12 @@
-import { Raster, rgb, hash, lerp, clamp } from './pixel.js?v=3';
-import { pathAt, trailProfileAt, biomeAt, riverAt, environment, TrailWorld } from './world.js?v=3';
-import { LandscapeTerrain } from './landscape.js?v=3';
-import { drawTraveller, drawCreature } from './actors.js?v=3';
-import { sampleWildlife } from './wildlife.js?v=3';
+import { Raster, rgb, hash, lerp, clamp, SIN, COS, R2 } from './pixel.js?v=4';
+import { pathAt, trailProfileAt, biomeAt, riverAt, waterAt, environment, TrailWorld } from './world.js?v=4';
+import { LandscapeTerrain } from './landscape.js?v=4';
+import { drawTraveller, drawCreature } from './actors.js?v=4';
+import { WildlifeDirector } from './wildlife.js?v=4';
+import { SPECIES } from './bestiary.js?v=4';
+import { makeTreeSprite, drawGroundPlant } from './vegetation.js?v=4';
 
 const PAPER = rgb(250, 249, 246);
-const LEAVES = [
-  [[49, 83, 62], [91, 126, 75], [150, 169, 103]],
-  [[38, 70, 57], [72, 106, 65], [123, 144, 80]],
-  [[94, 65, 51], [154, 104, 54], [202, 151, 78]],
-  [[84, 107, 102], [151, 168, 158], [218, 225, 211]],
-];
-const CROWN = [[.1, 0, 3.9, 1.5], [-1.2, -.7, 3.4, 1.1], [1.35, .55, 3.6, 1.25], [-.6, 1, 4.1, 1.1], [.8, -1, 4.2, 1.1], [.2, .1, 5, 1]];
-const SPECIES = { fox: 'Red fox', deer: 'Woodland deer', rabbit: 'Wild rabbit', bird: 'Woodland bird', stag: 'Moonlit stag', spirit: 'Lantern spirit' };
-
 export class ForestScene {
   constructor(canvas, seed) {
     this.canvas = canvas;
@@ -21,6 +14,7 @@ export class ForestScene {
     this.world = new TrailWorld(seed);
     this.terrain = new LandscapeTerrain(seed);
     this.sprites = new Map(); this.active = []; this.visibleAnimals = [];
+    this.wildlife = new WildlifeDirector(seed); this.hitTargets = []; this.lastState = null; this.ripples = [];
     this.reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.resize(canvas.clientWidth || 960, canvas.clientHeight || 460);
   }
@@ -28,6 +22,7 @@ export class ForestScene {
     if (!(cssWidth > 0 && cssHeight > 0)) return;
     // Keep the original small pixel figures. A larger stage adds more world
     // pixels instead of magnifying and cropping the old square view.
+    this.cssWidth = cssWidth; this.cssHeight = cssHeight;
     const renderScale = 10;
     const pixelScale = Math.max((cssWidth <= 600 ? .9 : 1.4) * 12 / renderScale,
       Math.sqrt(cssWidth * cssHeight / 400000));
@@ -48,56 +43,69 @@ export class ForestScene {
   height(s, x) { return this.terrain.height(s, x); }
   surface(s, x) { return this.terrain.surface(s, x); }
   treeSprite(kind, season, variant, size) {
-    const band = size < .85 ? .78 : size > 1.12 ? 1.16 : .98;
+    const band = Math.round(clamp(size, .65, 1.35) * 6) / 6;
     const key = `${kind}:${season}:${variant}:${band}`;
     if (this.sprites.has(key)) return this.sprites.get(key);
-    const pixelScale = this.r.scale / 12;
-    const r = new Raster(Math.ceil(142 * pixelScale), Math.ceil(150 * pixelScale), this.r.scale);
-    r.ox = 71 * pixelScale; r.oy = 139 * pixelScale; r.clear();
-    const scale = band, bark = kind === 'birch' ? [179, 178, 150] : [104, 83, 65];
-    const twig = [82, 70, 59], colors = LEAVES[season];
-    r.capsule([0, 0, 0], [.15 * scale, .08, 2.8 * scale], .24 * scale, .11 * scale, bark, 'rough');
-    for (let j = 0; j < 4; j++) {
-      const a = j * 1.7 + variant;
-      r.capsule([0, 0, .17], [Math.cos(a) * .65, Math.sin(a) * .65, .01], .14, .04, bark, 'rough');
+    const sprite = makeTreeSprite(kind, season, variant, band, this.r.scale);
+    if (this.sprites.size >= 192) this.sprites.delete(this.sprites.keys().next().value);
+    this.sprites.set(key, sprite);
+    return sprite;
+  }
+  treeShadow(e, x, y, z, env) {
+    const r = this.r, scale = e.scale || 1;
+    r.shadow(x, y, z, .32 * scale, .7);
+    if (e.variant === 'snag') return;
+    const amount = (1 - env.night * .7) * (env.seasonIndex === 3 && !['pine', 'cedar', 'spruce', 'cypress'].includes(e.variant) ? .35 : 1);
+    // A few overlapping, feathered foliage shadows follow the actual hillside.
+    // The spaces between them leave the forest floor dappled with daylight.
+    for (let k = 0; k < 6; k++) {
+      const dx = 1.2 + hash(e.seed, k + 19) * 1.75, dy = .2 + (hash(e.seed, k + 31) - .5) * 1.7;
+      const xx = x + dx * scale, yy = y + dy * scale;
+      const ground = this.surface(-yy, xx);
+      r.shadow(xx, yy, ground, (.65 + hash(k, e.seed) * .55) * scale, amount * .29);
     }
-    if (kind === 'pine') {
-      r.capsule([.15, 0, 2.2 * scale], [.05, 0, 6.1 * scale], .12, .025, bark, 'rough');
-      for (let level = 0; level < 5; level++) {
-        const z = (1.9 + level * .8) * scale, spread = (1.65 - level * .25) * scale;
-        for (let j = 0; j < 55; j++) {
-          const a = hash(j + level * 91, variant + 7) * Math.PI * 2;
-          const rad = Math.sqrt(hash(j + level * 21, variant + 9)) * spread;
-          const zz = z + (1 - rad / spread) * .8;
-          const col = season === 3 && hash(j, level) > .67 ? colors[2] : season === 2 ? [74, 99, 68] : [58 + level * 5, 91 + level * 4, 73 + level * 3];
-          r.sphere(Math.cos(a) * rad, Math.sin(a) * rad, zz, (.17 + hash(j, 17) * .19) * scale, col, 'rough');
-        }
-      }
-    } else {
-      for (let j = 0; j < 7; j++) {
-        const a = j * 2.4 + variant, z = (1.6 + j * .31) * scale;
-        const tip = [Math.cos(a) * (1.05 + (j % 2) * .35) * scale, Math.sin(a) * 1.15 * scale, z + 1.25 * scale];
-        r.capsule([.12, 0, z], tip, .12 * scale, .04 * scale, bark, 'rough');
-        if (season === 3) {
-          r.capsule(tip, [tip[0] + .4 * Math.cos(a - .8), tip[1] + .4 * Math.sin(a - .8), tip[2] + .55], .035, .018, twig, 'solid');
-          r.capsule(tip, [tip[0] + .4 * Math.cos(a + .8), tip[1] + .4 * Math.sin(a + .8), tip[2] + .45], .035, .018, twig, 'solid');
-        }
-      }
-      for (let n = 0; n < 265; n++) {
-        if (season === 3 && hash(n, variant + 88) < .72) continue;
-        const k = n + variant * 719, [cx, cy, cz, spread] = CROWN[n % CROWN.length];
-        const a = hash(k, 7) * 6.283, tilt = hash(k, 8) * 2 - 1, d = Math.cbrt(hash(k, 9)) * spread, flat = Math.sqrt(1 - tilt * tilt);
-        const x = cx + Math.cos(a) * flat * d, y = cy + Math.sin(a) * flat * d, z = cz + tilt * d * .8;
-        const tone = hash(k, 10) + (z - 4.2) * .22 + (d / spread - .5) * .3;
-        let color = colors[tone > .73 ? 2 : tone > .31 ? 1 : 0];
-        if (kind === 'birch' && season < 2) color = [color[0] + 10, color[1] + 9, color[2]];
-        r.sphere(x * scale, y * scale, z * scale, (.21 + hash(k, 11) * .21) * scale, color, 'rough');
-      }
+  }
+  hitTest(cssX, cssY) {
+    let chosen = null, nearest = Infinity;
+    for (const target of this.hitTargets) {
+      const distance = Math.hypot(cssX - target.cssX, cssY - target.cssY) / target.radius;
+      if (distance <= 1 && distance < nearest) { chosen = target; nearest = distance; }
     }
-    r.shadeEdges();
-    const sprite = r.sprite();
-    if (this.sprites.size >= 72) this.sprites.delete(this.sprites.keys().next().value);
-    this.sprites.set(key, sprite); return sprite;
+    return chosen;
+  }
+  interactAt(cssX, cssY, state = this.lastState) {
+    const target = this.hitTest(cssX, cssY);
+    if (target && state) return this.interactWith(target.id, state);
+    return state ? this.touchWater(cssX, cssY, state) : null;
+  }
+  touchWater(cssX, cssY, state) {
+    const r = this.r, sx = cssX / this.cssWidth * r.width, sy = cssY / this.cssHeight * r.height;
+    if (sx < 0 || sx >= r.width || sy < 0 || sy >= r.height) return null;
+    const index = Math.floor(sy) * r.width + Math.floor(sx);
+    if (Math.abs(r.depth[index] - r.groundZ[index]) > .12) return null;
+    const planes = new Set();
+    for (const row of this.terrain.rows) {
+      if (row.river) planes.add(row.river.level);
+      for (const pool of row.pools) planes.add(pool.level);
+    }
+    for (const level of planes) {
+      const u = (sx - r.ox) / r.scale;
+      const v = ((sy - r.oy) / r.scale + (level - r.cameraZ) * COS) / SIN;
+      const x = r.cameraX + (u + v) / R2, y = r.cameraY + (v - u) / R2;
+      const wet = waterAt(-y, x, this.seed);
+      if (!wet || Math.abs(wet.level - level) > .025 || Math.abs(r.project(x, y, level).d - r.groundZ[index]) > .18) continue;
+      if (this.ripples.length >= 12) this.ripples.shift();
+      this.ripples.push({ x, s: -y, z: level, time: state.elapsed });
+      return { id: 'water', species: 'water', name: 'The water', action: 'splash', sound: 'splash',
+        message: wet.kind === 'swamp' ? 'Small ripples drift between the reeds.' : 'A little splash joins the current.' };
+    }
+    return null;
+  }
+  interactEntity(id, state = this.lastState) { return this.interactWith(id, state); }
+  interactWith(id, state = this.lastState) {
+    const target = this.hitTargets.find(value => value.id === id);
+    if (!target || !state) return null;
+    return this.wildlife.interact(target.entity, state.elapsed, this.travellerPosition);
   }
   bridge(river) {
     const r = this.r, s0 = river.center - river.width * .5 - .55, s1 = river.center + river.width * .5 + .55;
@@ -117,14 +125,19 @@ export class ForestScene {
   smallProp(e, x, y, z, env, time) {
     const r = this.r, scale = e.scale || 1, seed = e.seed;
     if (e.kind === 'rock') {
-      const gray = env.seasonIndex === 3 ? [182, 193, 184] : [123, 132, 119];
-      const mountain = biomeAt(e.s, this.seed) === 'mountain' && Math.abs(e.side) > 3;
-      const size = scale * (mountain ? 1.65 : 1);
-      r.ellipsoid(x, y, z + .24 * size, .61 * size, .4 * size, .38 * size, gray, 'rough');
-      if (mountain) {
-        r.ellipsoid(x + .22, y - .18, z + .43 * size, .44 * size, .37 * size, .29 * size, [141, 146, 136], 'rough');
-        r.ellipsoid(x + .16, y - .1, z + .65 * size, .26 * size, .25 * size, .15 * size, env.seasonIndex === 3 ? [223, 227, 215] : [164, 165, 146], 'rough');
-      } else r.sphere(x - .2, y + .05, z + .3, .2, [101, 124, 76], 'rough');
+      // Broken rock has planes and an irregular footprint, not stacked spheres.
+      const gray = env.seasonIndex === 3 ? [177, 188, 178] : [119, 128, 115];
+      const points = [];
+      for (let k = 0; k < 6; k++) {
+        const a = k / 6 * Math.PI * 2, reach = (.44 + hash(seed, k + 8) * .27) * scale;
+        const xx = x + Math.cos(a) * reach, yy = y + Math.sin(a) * reach * .75;
+        points.push([xx, yy, this.surface(-yy, xx) + .025]);
+      }
+      const peak = [x + (hash(seed, 30) - .5) * .23, y + (hash(seed, 31) - .5) * .2, z + (.24 + hash(seed, 32) * .38) * scale];
+      for (let k = 0; k < 6; k++) {
+        const light = [1.12, 1.02, .77, .69, .86, 1.16][k];
+        r.triangle(peak, points[k], points[(k + 1) % 6], gray.map(v => v * light));
+      }
     } else if (e.kind === 'log') {
       r.capsule([x - .9, y, z + .2], [x + .9, y + .4, z + .21], .23, .26, [99, 77, 59], 'rough');
       r.sphere(x + .92, y + .4, z + .22, .22, [167, 139, 99], 'rough');
@@ -136,14 +149,51 @@ export class ForestScene {
         r.ellipsoid(x + dx, y + dy, z + h, .13, .13, .08, env.night > .5 ? [127, 197, 161] : [184, 104, 71], env.night > .5 ? 'glow' : 'solid');
       }
     } else {
-      for (let k = 0; k < 9; k++) {
-        const dx = (hash(seed + k, 5) - .5) * 1.5, dy = (hash(seed + k, 9) - .5) * 1.1;
-        const h = .18 + hash(k, seed) * .35;
-        const sway = this.reducedMotion ? 0 : Math.sin(time * 1.2 + k) * .035;
-        r.capsule([x + dx, y + dy, z], [x + dx + sway, y + dy, z + h], .025, .018, [83, 111, 65]);
-        if (env.seasonIndex !== 3) r.sphere(x + dx + sway, y + dy, z + h, .055, k % 3 ? [222, 205, 144] : [180, 162, 191]);
+      drawGroundPlant(r, e, x, y, z, env, time, (xx, yy) => {
+        const wet = e.kind === 'lily' ? waterAt(-yy, xx, this.seed) : null;
+        return wet ? wet.level : this.surface(-yy, xx);
+      }, this.reducedMotion);
+    }
+  }
+  waterLife(state, env) {
+    const r = this.r, time = state.elapsed;
+    // Flowing threads and small expanding rings remain in world space. Ripples
+    // are clipped to the water and use its depth, so banks occlude them naturally.
+    const first = Math.floor((state.distance - this.terrain.radius) / 18), last = Math.ceil((state.distance + this.terrain.radius) / 18);
+    for (let chunk = first; chunk <= last; chunk++) for (let n = 0; n < 6; n++) {
+      const k = chunk * 6 + n;
+      const s = chunk * 18 + hash(k, 812) * 18;
+      const x = pathAt(s, state.seed) + (hash(k, 813) - .5) * 47;
+      const wet = waterAt(s, x, this.seed);
+      if (!wet) continue;
+      const phase = (time * (wet.kind === 'swamp' ? .18 : .32) + hash(k, 814)) % 1;
+      if (wet.kind === 'stream') {
+        const xx = x + phase * 1.3;
+        r.line([xx, -s, wet.level + .035], [xx + .3 + hash(k, 815) * .45, -s + .035, wet.level + .035], [149, 192, 178]);
+      } else if (phase < .8) {
+        const radius = phase * .65;
+        for (let q = 0; q < 12; q++) {
+          const a = q / 12 * Math.PI * 2;
+          r.plot(x + Math.cos(a) * radius, -s + Math.sin(a) * radius, wet.level + .025, [130, 164, 132]);
+        }
       }
     }
+    this.ripples = this.ripples.filter(ripple => time - ripple.time < 2.3);
+    for (const ripple of this.ripples) {
+      const age = time - ripple.time, fade = clamp(1 - age / 2.3, 0, 1);
+      for (let ring = 0; ring < 2; ring++) {
+        const radius = .12 + age * .8 - ring * .25;
+        if (radius <= 0) continue;
+        const color = [lerp(78, 203, fade), lerp(132, 217, fade), lerp(137, 190, fade)];
+        for (let k = 0; k < 24; k++) {
+          const a = k / 24 * Math.PI * 2, b = (k + 1) / 24 * Math.PI * 2;
+          const x = ripple.x + Math.cos(a) * radius, s = ripple.s - Math.sin(a) * radius;
+          if (!waterAt(s, x, this.seed)) continue;
+          r.line([x, -s, ripple.z + .035], [ripple.x + Math.cos(b) * radius, -ripple.s + Math.sin(b) * radius, ripple.z + .035], color);
+        }
+      }
+    }
+
   }
   particles(state, env) {
     const r = this.r, t = state.elapsed;
@@ -194,32 +244,44 @@ export class ForestScene {
   }
   draw(state) {
     const started = performance.now(), env = environment(state), r = this.r;
+    this.lastState = state;
     const profile = trailProfileAt(state.distance, state.seed);
     r.cameraX = profile.x; r.cameraY = -state.distance; r.cameraZ = profile.height;
     this.terrain.prepare(state, r);
     r.clear(PAPER); this.terrain.draw(state, env, r);
     this.world.update(state.distance, this.terrain.radius);
+    this.wildlife.prune(this.world.entities);
     const active = this.active; active.length = 0;
     for (const e of this.world.entities) {
-      const motion = e.kind === 'animal' ? sampleWildlife(e, state.elapsed, state.seed) : null;
+      const motion = e.kind === 'animal' ? this.wildlife.sample(e, state.elapsed, state.seed) : null;
       const s = motion ? motion.s : e.s;
       const relative = s - state.distance;
       if (Math.abs(relative) > this.terrain.radius) continue;
       const x = motion ? motion.x : pathAt(s, state.seed) + e.side;
-      const y = -s, z = this.surface(s, x);
+      const y = -s;
+      if (e.kind !== 'animal' && e.kind !== 'tree' && e.kind !== 'lily') {
+        const grade = this.terrain.gradeAt(s, x);
+        if (grade > .95 && (e.kind !== 'grass' || grade > 1.45 || hash(e.seed, 442) > .2)) continue;
+      }
+      const aquatic = e.kind === 'animal' && SPECIES[e.variant]?.habitat === 'water';
+      const wet = aquatic || e.kind === 'lily' ? waterAt(s, x, this.seed) : null;
+      const z = aquatic ? (motion.waterLevel ?? wet?.level ?? e.water?.level ?? this.surface(s, x))
+        : e.kind === 'lily' && (wet || e.water) ? (wet || e.water).level : this.surface(s, x);
       const point = r.project(x, y, z);
-      if (point.sx < -85 || point.sx > r.width + 85 || point.sy < -15 || point.sy > r.height + 110) continue;
-      if (e.kind === 'tree') r.shadow(x + 2.1, y + .5, z, (e.scale || 1) * 1.7);
-      if (e.kind === 'rock') r.shadow(x + .3, y, z, .6);
+      const margin = e.kind === 'tree' ? 35 : e.kind === 'animal' ? 30 : 18;
+      const crown = e.kind === 'tree' ? (['aspen', 'cypress', 'spruce', 'birch'].includes(e.variant) ? 8 : 6.5) * r.scale * (e.scale || 1) * .87 + 9 : 35;
+      if (point.sx < -margin || point.sx > r.width + margin || point.sy < -8 || point.sy > r.height + crown) continue;
+      if (e.kind === 'tree') this.treeShadow(e, x, y, z, env);
+      if (e.kind === 'rock') r.shadow(x + .1, y, z, .5, .6);
       active.push({ e, x, y, z, motion });
     }
-    r.shadow(r.cameraX + .5, r.cameraY, this.surface(state.distance, r.cameraX), .6);
     r.applyShadows();
     const bridges = new Map();
     for (let s = state.distance - this.terrain.radius; s <= state.distance + this.terrain.radius; s += 4) {
       const river = riverAt(s, state.seed);
       if (river) bridges.set(river.center, river);
     }
+    this.waterLife(state, env);
     for (const river of bridges.values()) this.bridge(river);
     const treeCount = active.filter(v => v.e.kind === 'tree').length;
     const resting = state.mode === 'snack' || state.mode === 'sleep';
@@ -227,6 +289,7 @@ export class ForestScene {
     const px = r.cameraX + (resting ? 1.12 / normal : 0);
     const py = r.cameraY + (resting ? 1.12 * profile.slope / normal : 0);
     const travellerGround = this.surface(-py, px);
+    this.travellerPosition = { x: px, y: py };
     const protectedPoint = r.project(px, py, travellerGround + (resting ? .6 : 1.2));
     const pixelScale = r.scale / 12;
     r.cutaways = [{ x: protectedPoint.sx, y: protectedPoint.sy, d: protectedPoint.d, rx: (resting ? 25 : 18) * pixelScale, ry: (resting ? 20 : 27) * pixelScale }];
@@ -235,19 +298,40 @@ export class ForestScene {
       const point = r.project(animal.x, animal.y, animal.z + .6 + animal.motion.hop);
       r.cutaways.push({ x: point.sx, y: point.sy, d: point.d, rx: 15 * pixelScale, ry: 15 * pixelScale });
     }
-    this.visibleAnimals.length = 0;
+    this.visibleAnimals.length = 0; this.hitTargets.length = 0;
     for (const { e, x, y, z, motion } of active) {
       if (e.kind === 'tree') {
-        const sprite = this.treeSprite(e.variant || 'oak', env.seasonIndex, Math.abs(e.seed | 0) % 3, e.scale || 1);
-        const sway = this.reducedMotion ? 0 : Math.sin(Math.floor(state.elapsed * 8) / 8 * .8 + e.seed) * 1.1 * pixelScale;
+        const sprite = this.treeSprite(e.variant || 'oak', env.seasonIndex, Math.abs(e.seed | 0) % 16, e.scale || 1);
+        const sway = this.reducedMotion ? 0 : (Math.sin(state.elapsed * .85 - x * .17 + y * .11) + .3 * Math.sin(state.elapsed * 1.4 + e.seed)) * 1.2 * pixelScale;
         r.blit(sprite, x, y, z, sway);
       } else if (e.kind === 'animal') {
         const near = Math.abs(motion.s - state.distance), kind = e.variant || 'deer';
-        drawCreature(r, { x, y, z, time: state.elapsed, kind, seed: e.seed, scale: e.scale || 1, motion, resting: state.mode === 'snack', night: env.night > .4 });
-        if (near < 8) this.visibleAnimals.push({ id: e.id, kind, name: SPECIES[kind] || kind, distance: near });
+        const species = SPECIES[kind] || { name: kind, height: 1, hitRadius: 1 };
+        const location = r.project(x, y, z + (species.height || .7) * (e.scale || 1) * .5 + (motion.hop || 0));
+        const extent = Math.ceil(Math.max(species.hitRadius || 1, species.height || 1) * (e.scale || 1) * r.scale + 7);
+        const x0 = Math.max(0, Math.floor(location.sx - extent)), x1 = Math.min(r.width - 1, Math.ceil(location.sx + extent));
+        const y0 = Math.max(0, Math.floor(location.sy - extent)), y1 = Math.min(r.height - 1, Math.ceil(location.sy + extent));
+        const before = [];
+        for (let iy = y0; iy <= y1; iy += 2) for (let ix = x0; ix <= x1; ix += 2) before.push(r.depth[iy * r.width + ix]);
+        drawCreature(r, { x, y, z, time: state.elapsed, kind, seed: e.seed, scale: e.scale || 1, motion, groundAt: species.habitat === 'water' || species.habitat === 'air' ? null : (xx, yy) => this.surface(-yy, xx), resting: state.mode === 'snack', night: env.night > .4 });
+        const samples = []; let k = 0;
+        for (let iy = y0; iy <= y1; iy += 2) for (let ix = x0; ix <= x1; ix += 2) {
+          const index = iy * r.width + ix, depth = r.depth[index];
+          if (depth > before[k] + .00001) samples.push({ index, depth });
+          k++;
+        }
+        if (near < 12 && samples.length) this.visibleAnimals.push({ id: e.id, kind, name: species.name, distance: near });
+        const cssX = location.sx / r.width * this.cssWidth, cssY = location.sy / r.height * this.cssHeight;
+        if (samples.length && cssX >= 0 && cssX <= this.cssWidth && cssY >= 0 && cssY <= this.cssHeight) {
+          this.hitTargets.push({ id: e.id, name: species.name, cssX, cssY,
+            radius: Math.max(21, (species.hitRadius || .8) * r.scale * this.cssWidth / r.width * (e.scale || 1)),
+            entity: e, depth: location.d, samples });
+        }
       } else this.smallProp(e, x, y, z, env, state.elapsed);
     }
     drawTraveller(r, { x: px, y: py, z: travellerGround, yaw: Math.atan2(-1, profile.slope), grade: profile.grade / normal, groundAt: (x, y) => this.surface(-y, x), time: state.elapsed, distance: state.distance, mode: state.mode, modeTime: state.modeTime, night: env.night > .4, reducedMotion: this.reducedMotion });
+    this.hitTargets = this.hitTargets.filter(target => target.samples.some(sample => Math.abs(r.depth[sample.index] - sample.depth) < .001));
+    this.hitTargets.sort((a, b) => b.depth - a.depth);
     r.applyShadows(); r.shadeEdges(); this.lighting(env); this.particles(state, env); r.present();
     this.lastStats = { renderMs: performance.now() - started, chunks: this.world.chunks.size, entities: this.world.entities.length, trees: treeCount, sprites: this.sprites.size, visible: active.length };
     return env;

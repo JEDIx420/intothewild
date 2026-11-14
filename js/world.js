@@ -1,4 +1,5 @@
 // Pure journey rules and deterministic scenery. No DOM, timers or network state.
+import { SPECIES } from './bestiary.js?v=4';
 const DEFAULT_SEED = 0x1d70a11d;
 const TAU = Math.PI * 2;
 const HOURS_PER_SECOND = 24 / 300;
@@ -11,12 +12,12 @@ const MODES = new Set(['paused', 'walking', 'snack', 'sleep']);
 const SEASONS = ['spring', 'summer', 'autumn', 'winter'];
 const BIOME_LABELS = {
   forest: 'Whispering woods', stream: 'Silverbrook', meadow: 'The open meadows',
-  mountain: 'The high pass', enchanted: 'The enchanted grove',
+  mountain: 'The high pass', swamp: 'The willow wetlands', enchanted: 'The enchanted grove',
 };
 const MIDDLE_BIOMES = [
-  ['meadow', 'mountain', 'enchanted'], ['meadow', 'enchanted', 'mountain'],
-  ['mountain', 'meadow', 'enchanted'], ['mountain', 'enchanted', 'meadow'],
-  ['enchanted', 'meadow', 'mountain'], ['enchanted', 'mountain', 'meadow'],
+  ['meadow', 'mountain', 'swamp', 'enchanted'], ['swamp', 'meadow', 'enchanted', 'mountain'],
+  ['mountain', 'meadow', 'swamp', 'enchanted'], ['meadow', 'swamp', 'mountain', 'enchanted'],
+  ['enchanted', 'mountain', 'meadow', 'swamp'], ['swamp', 'enchanted', 'meadow', 'mountain'],
 ];
 const sleepSessions = new WeakMap();
 
@@ -50,10 +51,10 @@ function boundary(index, seed) {
 }
 function regionBiome(index, seed) {
   if (index < 0) return 'forest';
-  const slot = index % 5;
+  const slot = index % 6;
   if (slot === 0) return 'stream';
-  if (slot === 4) return 'forest';
-  const cycle = Math.floor(index / 5);
+  if (slot === 5) return 'forest';
+  const cycle = Math.floor(index / 6);
   const arrangement = cycle === 0 ? 0 : Math.floor(randomAt(seed, cycle, 103) * MIDDLE_BIOMES.length);
   return MIDDLE_BIOMES[arrangement][slot - 1];
 }
@@ -115,14 +116,14 @@ function routeShapeAt(position, seed) {
   const region = regionAt(position, seed);
   for (let index = Math.max(0, region - 1); index <= region + 1; index++) {
     const biome = regionBiome(index, seed);
-    if (biome !== 'mountain' && biome !== 'stream' && biome !== 'meadow') continue;
+    if (biome !== 'mountain' && biome !== 'stream' && biome !== 'meadow' && biome !== 'swamp') continue;
     // Broad foothills begin before the named mountain section and taper into
     // the next landscape, rather than making a raised platform at its border.
     const edge = biome === 'mountain' ? 20 : 19;
     const weight = smooth((position - boundary(index, seed) + edge) / (edge * 2))
       * (1 - smooth((position - boundary(index + 1, seed) + edge) / (edge * 2)));
     if (biome === 'mountain') mountain += weight;
-    else valley += weight * (biome === 'stream' ? 1 : .65);
+    else valley += weight * (biome === 'stream' || biome === 'swamp' ? 1 : .65);
   }
   const rolling = 1.9 * Math.sin(position * .055 + phase)
     + .65 * Math.sin(position * .103 + second);
@@ -136,12 +137,68 @@ export function riverAt(s, seed = DEFAULT_SEED) {
   const region = regionAt(position, worldSeed);
   for (let index = Math.max(0, region - 1); index <= region + 1; index++) {
     if (regionBiome(index, worldSeed) !== 'stream') continue;
-    const center = boundary(index, worldSeed) + 10;
-    if (Math.abs(position - center) <= 7) {
-      const level = routeShapeAt(center, worldSeed).height - .12;
-      return { center, width: 2.7 + randomAt(worldSeed, index, 301) * .6,
-        level, bridgeHeight: level + .26 };
+    for (const offset of [10, 40]) {
+      const center = boundary(index, worldSeed) + offset;
+      if (Math.abs(position - center) <= 7) {
+        const level = routeShapeAt(center, worldSeed).height - .12;
+        return { kind: 'stream', center, width: 2.7 + randomAt(worldSeed, index, 301 + offset) * .6,
+          level, depth: .16, flow: 1, bridgeHeight: level + .26 };
+      }
     }
+  }
+  return null;
+}
+
+// Wetland pools are world-space basins, never decals on top of the trail.
+// A small cache covers nearby regions, keeping even an endless trip bounded.
+const poolCache = new Map();
+function poolsInRegion(index, seed) {
+  const key = `${seed}:${index}`;
+  if (poolCache.has(key)) return poolCache.get(key);
+  const pools = [];
+  if (regionBiome(index, seed) === 'swamp') {
+    for (const offset of [13, 40]) for (const bank of [-1, 1]) {
+      const salt = offset * 2 + bank;
+      const s = boundary(index, seed) + offset + randomAt(seed, index, 710 + salt) * 4;
+      const rx = 4.2 + randomAt(seed, index, 720 + salt) * 1.8;
+      const rs = 6 + randomAt(seed, index, 730 + salt) * 2.4;
+      const trailXs = [-rs, -rs / 2, 0, rs / 2, rs].map(ds => pathAt(s + ds, seed));
+      const edgeX = bank > 0 ? Math.max(...trailXs) : Math.min(...trailXs);
+      const x = edgeX + bank * (rx + 3.6 + randomAt(seed, index, 740 + salt) * 2);
+      const level = Math.min(...[-rs, 0, rs].map(ds => routeShapeAt(s + ds, seed).height)) - .28;
+      pools.push({ id: `pool:${index}:${offset}:${bank}`, kind: 'swamp', s, x, rx, rs,
+        center: s, width: rs * 2, level, depth: .32, flow: .12, bank });
+    }
+  }
+  if (poolCache.size >= 24) poolCache.delete(poolCache.keys().next().value);
+  poolCache.set(key, pools);
+  return pools;
+}
+
+export function swampPoolsAt(s, seed = DEFAULT_SEED) {
+  const position = finite(s), worldSeed = seedOf(seed), region = regionAt(position, worldSeed);
+  const pools = [];
+  for (let index = Math.max(0, region - 1); index <= region + 1; index++) {
+    for (const pool of poolsInRegion(index, worldSeed)) {
+      if (Math.abs(position - pool.s) <= pool.rs * 1.5) pools.push(pool);
+    }
+  }
+  return pools;
+}
+
+export function swampPoolAt(s, seed = DEFAULT_SEED, bank = 1) {
+  return swampPoolsAt(s, seed).filter(pool => pool.bank === Math.sign(bank || 1))
+    .sort((a, b) => Math.abs(a.s - s) - Math.abs(b.s - s))[0] || null;
+}
+
+export function waterAt(s, x, seed = DEFAULT_SEED) {
+  const position = finite(s), lateral = finite(x), worldSeed = seedOf(seed);
+  const river = riverAt(position, worldSeed);
+  if (river && Math.abs(position - river.center + Math.sin(lateral * .34) * .28) < river.width / 2
+    && Math.abs((lateral - pathAt(position, worldSeed)) / Math.hypot(1, pathSlopeAt(position, worldSeed))) > 1.3) return river;
+  for (const pool of swampPoolsAt(position, worldSeed)) {
+    const normalized = Math.hypot((lateral - pool.x) / pool.rx, (position - pool.s) / pool.rs);
+    if (normalized < 1) return { ...pool, normalized, depth: pool.depth * smooth((1 - normalized) * 5) };
   }
   return null;
 }
@@ -153,7 +210,7 @@ function terrainRowAt(position, seed) {
   if (lastTerrainRow?.s === position && lastTerrainRow.seed === seed) return lastTerrainRow;
   const shape = routeShapeAt(position, seed);
   lastTerrainRow = { ...shape, s: position, seed, x: pathAt(position, seed),
-    slope: pathSlopeAt(position, seed), river: riverAt(position, seed) };
+    slope: pathSlopeAt(position, seed), river: riverAt(position, seed), pools: swampPoolsAt(position, seed) };
   return lastTerrainRow;
 }
 
@@ -173,12 +230,21 @@ export function terrainAt(s, x, seed = DEFAULT_SEED) {
   const peak = 14.5 + 3.5 * Math.sin(position * .105 + row.second);
   const clearTrail = smooth(away / 5);
   const ridge = row.mountain * ridgeProfile * peak * clearTrail;
-  const texture = shoulder * .24 * Math.sin(position * .085 + lateral * .12 + row.phase);
-  let height = row.height + foothills + ridge + texture;
+  const texture = shoulder * (.24 * Math.sin(position * .085 + lateral * .12 + row.phase)
+    + .16 * Math.sin(position * .47 + lateral * .65) * Math.sin(position * .19 - lateral * .33));
+  const hummocks = clearTrail * (1 - row.mountain * .5) * (1 - row.valley * .35)
+    * (.7 * Math.sin(position * .26 + lateral * .32 + row.phase)
+      + .26 * Math.sin(position * .5 - lateral * .46 + row.second));
+  let height = row.height + foothills + ridge + texture + hummocks;
   if (row.river) {
     const distance = Math.abs(position - row.river.center);
     const weight = 1 - smooth((distance - row.river.width / 2) / (7 - row.river.width / 2));
     height = blend(height, row.river.level - .16, weight);
+  }
+  for (const pool of row.pools) {
+    const radius = Math.hypot((x - pool.x) / pool.rx, (position - pool.s) / pool.rs);
+    const carve = 1 - smooth((radius - 1) / .5);
+    if (carve > 0) height = blend(height, pool.level - pool.depth, carve);
   }
   return height;
 }
@@ -274,79 +340,149 @@ export function environment(state) {
   };
 }
 
+const TREE_TYPES = {
+  forest: ['oak', 'beech', 'birch', 'maple', 'cedar', 'aspen', 'rowan', 'pine'],
+  stream: ['willow', 'birch', 'aspen', 'beech', 'oak'],
+  meadow: ['oak', 'rowan', 'aspen', 'birch'],
+  mountain: ['pine', 'spruce', 'cedar', 'snag'],
+  swamp: ['willow', 'cypress', 'snag', 'aspen'],
+  enchanted: ['maple', 'cedar', 'oak', 'willow', 'rowan', 'birch'],
+};
+const LAND_FAUNA = {
+  forest: ['fox', 'deer', 'rabbit', 'squirrel', 'bird', 'badger', 'boar', 'wolf', 'bear', 'owl'],
+  stream: ['heron', 'bird', 'deer', 'rabbit', 'butterfly', 'dragonfly'],
+  meadow: ['horse', 'deer', 'rabbit', 'butterfly', 'bird', 'fox', 'eagle'],
+  mountain: ['goat', 'goat', 'eagle', 'lynx', 'wolf', 'bear', 'bird'],
+  swamp: ['heron', 'dragonfly', 'frog', 'bird', 'boar'],
+  enchanted: ['stag', 'spirit', 'butterfly', 'deer', 'owl', 'fox'],
+};
+
 function makeChunk(index, seed) {
   const start = index * CHUNK_LENGTH;
   const random = randomSequence(hash(seed, index, 601));
   const entities = [];
-  const add = (kind, variant, s, side, scale = 1) => {
+  const choose = array => array[Math.floor(random() * array.length)];
+  const add = (kind, variant, s, side, scale = 1, extra = {}) => {
     const ordinal = entities.length;
-    entities.push({
-      id: `${index}:${ordinal}:${kind}`, kind, variant, s, side, scale,
-      seed: hash(seed, index, ordinal + 1000),
-    });
+    const entity = {
+      id: `${index}:${ordinal}:${kind}`, kind, variant,
+      s: clamp(s, start + .05, start + CHUNK_LENGTH - .05), side, scale,
+      seed: hash(seed, index, ordinal + 1000), ...extra,
+    };
+    entities.push(entity); return entity;
   };
+  const animal = (variant, s, side, extra = {}) => add('animal', variant, s, side,
+    (SPECIES[variant]?.scale || 1) * (.9 + random() * .18), extra);
+  const plant = (s, side, far = false) => {
+    const biome = biomeAt(s, seed), x = pathAt(s, seed) + side;
+    const water = waterAt(s, x, seed);
+    if (water) {
+      if (water.kind === 'swamp' && random() < .65) add('lily', 'water', s, side, .8 + random() * .5, { water });
+      return;
+    }
+    const grove = .5 + Math.sin(s * .11 + seed * .000001) * .27 + Math.cos(side * .17 + s * .035) * .23;
+    let chance = { forest: .68, enchanted: .68, stream: .48, meadow: .08, mountain: .24, swamp: .4 }[biome];
+    chance += far ? grove * .15 : grove * .05;
+    // Trees give way to exposed ridges rather than growing out of cliff faces.
+    const profile = trailProfileAt(s, seed);
+    if (biome === 'mountain' && terrainAt(s, x, seed) - profile.height > 7) chance *= .18;
+    if (random() < chance) {
+      add('tree', choose(TREE_TYPES[biome]), s, side, .7 + random() * .75);
+    } else if (!far || random() < .45) {
+      const kind = biome === 'mountain' ? choose(['rock', 'grass', 'bush'])
+        : biome === 'swamp' ? choose(['reeds', 'fern', 'bush'])
+        : biome === 'forest' || biome === 'enchanted' ? choose(['fern', 'bush', 'mushroom', 'grass'])
+        : choose(['flowers', 'grass', 'bush']);
+      add(kind, kind === 'rock' ? 'slate' : kind === 'mushroom' && biome === 'enchanted' ? 'glowing' : 'wild', s, side, .7 + random() * .6);
+    }
+  };
+  // Mixed groves leave a readable trail and genuine openings between trees.
   for (let slot = 0; slot < 12; slot++) {
-    const s = start + (slot + .1 + random() * .8) * (CHUNK_LENGTH / 12);
-    const biome = biomeAt(s, seed);
-    const side = (slot % 2 ? -1 : 1) * (3.1 + random() * 7);
-    const choice = random();
-    const scale = .8 + random() * .7;
-    const river = riverAt(s, seed);
-    if (river && Math.abs(s - river.center) < river.width / 2 + .4) continue;
-    const treeChance = { forest: .88, enchanted: .84, stream: .66, meadow: .17, mountain: .25 }[biome];
-    if (choice < treeChance) {
-      const variant = biome === 'mountain' ? 'pine' : choice < .24 ? 'birch' : choice < .5 ? 'pine' : 'oak';
-      add('tree', variant, s, side, scale);
-    } else {
-      const kind = biome === 'mountain' ? 'rock' : biome === 'enchanted' ? 'mushroom' : 'flowers';
-      add(kind, kind === 'rock' ? 'granite' : kind === 'mushroom' ? 'glowing' : 'wild', s, side, scale);
-    }
+    const s = start + (slot + .1 + random() * .8) * 1.5;
+    plant(s, (slot % 2 ? -1 : 1) * (3.2 + random() * 7.8));
   }
-  for (let slot = 0; slot < 6; slot++) {
+  for (const lane of [-4, -3, -2, 2, 3, 4]) for (let row = 0; row < (Math.abs(lane) === 4 ? 2 : 4); row++) {
+    const s = start + (row + .14 + random() * .72) * (Math.abs(lane) === 4 ? 9 : 4.5);
+    plant(s, lane * 9.4 + (random() - .5) * 7.6, true);
+  }
+  // Low plants form different, irregular patches along each bank of the trail.
+  for (let slot = 0; slot < 17; slot++) {
     const s = start + random() * CHUNK_LENGTH;
-    const side = (random() < .5 ? -1 : 1) * (1.8 + random() * 7.5);
-    const choice = random();
-    const biome = biomeAt(s, seed);
-    const kind = choice < .16 ? 'log' : choice < .45 ? 'rock'
-      : biome === 'forest' || biome === 'enchanted' ? 'mushroom' : 'flowers';
-    const variant = kind === 'mushroom' ? (biome === 'enchanted' ? 'glowing' : 'red')
-      : kind === 'rock' ? 'moss' : kind === 'flowers' ? 'wild' : 'fallen';
-    const river = riverAt(s, seed);
-    if (!river || Math.abs(s - river.center) > river.width / 2 + .3) add(kind, variant, s, side, .7 + random() * .5);
-  }
-  // Distant stands fill the wider view at the same small physical scale.
-  // Jittered groves leave clearings and expose the terrain between canopies.
-  for (const lane of [-4, -3, -2, 2, 3, 4]) for (let row = 0; row < 4; row++) {
-    const s = start + (row + .14 + random() * .72) * (CHUNK_LENGTH / 4);
-    const side = lane * 9.4 + (random() - .5) * 7.6;
-    const biome = biomeAt(s, seed), river = riverAt(s, seed);
-    if (river && Math.abs(s - river.center) < river.width / 2 + .6) continue;
-    const grove = .5 + Math.sin(s * .11 + seed * .000001) * .27
-      + Math.cos(side * .17 + s * .035) * .23;
-    const chance = { forest: .64, enchanted: .7, stream: .53, meadow: .08, mountain: .18 }[biome]
-      + grove * (biome === 'meadow' ? .14 : .24);
+    const side = (slot % 2 ? -1 : 1) * (1.55 + random() * (slot < 12 ? 9 : 27));
+    const biome = biomeAt(s, seed), water = waterAt(s, pathAt(s, seed) + side, seed);
+    if (water) {
+      if (water.kind === 'swamp') add('lily', 'water', s, side, .8 + random() * .5, { water });
+      continue;
+    }
     const roll = random();
-    if (roll < chance) {
-      const variant = biome === 'mountain' || random() < .32 ? 'pine' : random() < .3 ? 'birch' : 'oak';
-      add('tree', variant, s, side, .72 + random() * .65);
-    } else if (random() < .55) {
-      const kind = biome === 'mountain' ? 'rock' : biome === 'enchanted' ? 'mushroom' : 'flowers';
-      add(kind, kind === 'rock' ? 'granite' : kind === 'mushroom' ? 'glowing' : 'wild', s, side, .7 + random() * .7);
+    const kind = biome === 'swamp' ? (roll < .55 ? 'reeds' : 'fern')
+      : biome === 'mountain' ? (roll < .22 ? 'rock' : roll < .8 ? 'grass' : 'flowers')
+      : biome === 'forest' || biome === 'enchanted'
+        ? (roll < .35 ? 'fern' : roll < .68 ? 'grass' : roll < .83 ? 'mushroom' : roll < .94 ? 'bush' : 'log')
+        : (roll < .55 ? 'grass' : roll < .9 ? 'flowers' : 'bush');
+    add(kind, kind === 'flowers' ? choose(['white', 'blue', 'gold', 'pink']) : kind === 'mushroom' && biome === 'enchanted' ? 'glowing' : 'wild', s, side, .65 + random() * .75);
+  }
+
+  // Each stretch has its own residents. Encounters are dispersed, never a zoo
+  // placed at one point, and larger animals have smaller family groups.
+  const centerBiome = biomeAt(start + 9, seed);
+  const encounters = centerBiome === 'meadow' ? 2 : 3;
+  for (let slot = 0; slot < encounters; slot++) {
+    const s = start + 3 + slot * 5 + random() * 2;
+    const biome = biomeAt(s, seed), variant = choose(LAND_FAUNA[biome]);
+    const side = (random() < .5 ? -1 : 1) * (2.8 + random() * 4.5);
+    if (waterAt(s, pathAt(s, seed) + side, seed)) continue;
+    if (variant === 'horse') {
+      const group = `herd:${index}:${slot}`, count = 3 + Math.floor(random() * 2);
+      for (let k = 0; k < count; k++) animal('horse', s + k * .8, side + (k % 2) * 1.5, { group });
+    } else if (variant === 'goat' && random() < .6) {
+      const group = `goats:${index}:${slot}`;
+      for (let k = 0; k < 2; k++) animal('goat', s + k * 1.2, side + k * .9, { group });
+    } else animal(variant, s, side);
+  }
+  if (centerBiome === 'meadow' && index % 3 === 0 && !entities.some(e => e.variant === 'horse')) {
+    for (let k = 0; k < 3; k++) animal('horse', start + 7 + k * 1.2, -4.8 - (k % 2) * 1.6, { group: `herd:${index}` });
+  }
+
+  // Every actual stream crossing has swimmers, a bird on the bank and reeds.
+  const rivers = new Map();
+  for (let s = start; s < start + CHUNK_LENGTH; s += 2) {
+    const river = riverAt(s, seed);
+    if (river && river.center >= start && river.center < start + CHUNK_LENGTH) rivers.set(river.center, river);
+  }
+  for (const water of rivers.values()) {
+    for (const [kind, side] of [['fish', -4.2], ['fish', 6.8], ['duck', 4.4], ['otter', -7.5]]) {
+      animal(kind, water.center, side, { water });
+    }
+    animal('heron', water.center - water.width / 2 - 1, 5.8, { water });
+    for (const bank of [-1, 1]) for (const side of [-7, 3.8, 8]) {
+      const s = water.center + bank * (water.width / 2 + .8);
+      if (s >= start && s < start + CHUNK_LENGTH) add('reeds', 'bank', s, side, 1);
     }
   }
-  if (random() < .5) {
-    const choices = ['fox', 'deer', 'rabbit', 'bird'];
-    add('animal', choices[Math.floor(random() * choices.length)], start + 3 + random() * 12,
-      (random() < .5 ? -1 : 1) * (2.7 + random() * 2.8), .85 + random() * .3);
+  const pools = new Map();
+  for (let s = start; s < start + CHUNK_LENGTH; s += 3) for (const pool of swampPoolsAt(s, seed)) {
+    if (pool.s >= start && pool.s < start + CHUNK_LENGTH) pools.set(pool.id, pool);
   }
-  if (index > 2 && randomAt(seed, index, 602) < .08) {
-    add('animal', randomAt(seed, index, 603) < .5 ? 'spirit' : 'stag', start + 9, -3.8, 1.1);
+  for (const water of pools.values()) {
+    const side = water.x - pathAt(water.s, seed);
+    animal('crocodile', water.s, side + water.bank * (water.rx + .6), { water });
+    animal('frog', water.s + 2, side + water.bank * (water.rx + .3), { water });
+    animal('dragonfly', water.s - 1, side, { water });
+    animal('duck', water.s, side, { water });
+    for (let k = 0; k < 3; k++) add('lily', 'water', water.s + (k - 1) * 1.5, side + (k - 1) * 1.1, .9, { water });
+    for (const direction of [-1, 1]) add('reeds', 'wetland', water.s, side + direction * (water.rx + .4), 1.2);
   }
   if (index === 0) {
-    add('animal', 'fox', 5, 2.5, 1);
-    add('animal', 'rabbit', 10.5, -3.1, .85);
+    animal('fox', 5, 2.5);
+    animal('rabbit', 10.5, -3.1);
+    animal('squirrel', 14, 4.5);
   }
-  if (index === 1) add('animal', 'spirit', 29.2, -3.6, 1.15);
+  if (index === 1) {
+    animal('deer', 22, -4.5);
+    animal('spirit', 29.2, -3.6);
+    animal('bird', 32, 3.5);
+  }
   return { index, start, end: start + CHUNK_LENGTH, entities };
 }
 
