@@ -1,7 +1,7 @@
-import { createJourney, stepJourney, setActivity, environment, serializeJourney, restoreJourney, trailProfileAt } from './world.js?v=5';
-import { ForestScene } from './scene.js?v=5';
-import { ForestAudio } from './audio.js?v=5';
-import { SPECIES } from './bestiary.js?v=5';
+import { createJourney, stepJourney, setActivity, environment, serializeJourney, restoreJourney, trailProfileAt } from './world.js?v=6';
+import { ForestScene } from './scene.js?v=6';
+import { ForestAudio } from './audio.js?v=6';
+import { SPECIES } from './bestiary.js?v=6';
 
 const SOUND_KEY = 'into-the-wild.sound.v2';
 const params = new URLSearchParams(location.search);
@@ -18,6 +18,7 @@ try { soundPreference = localStorage.getItem(SOUND_KEY); } catch { /* Optional s
 state.sound = soundPreference !== 'off';
 // Coming back to the trail never starts walking or sound without a gesture.
 if (state.mode === 'walking') setActivity(state, 'paused');
+if (state.rest?.nextMode === 'walking') state.rest.nextMode = 'paused';
 const canvas = document.getElementById('c');
 const scene = new ForestScene(canvas, state.seed);
 const sceneResize = new ResizeObserver(entries => {
@@ -103,11 +104,14 @@ function status(text, hold = 0) {
 }
 function activity(mode) {
   if (ui.journal.open) return;
-  setActivity(state, state.mode === mode && mode !== 'walking' ? 'paused' : mode);
+  const intended = state.rest?.phase === 'exit' ? state.rest.nextMode : state.mode;
+  setActivity(state, intended === mode && mode !== 'walking' ? 'paused' : mode);
   statusUntil = 0; renderUI(); save();
   if (state.sound) unlockSound();
 }
-function toggleWalk() { activity(state.mode === 'walking' ? 'paused' : 'walking'); }
+function toggleWalk() {
+  activity(state.mode === 'walking' || state.rest?.nextMode === 'walking' ? 'paused' : 'walking');
+}
 async function unlockSound() {
   if (!state.sound) return false;
   if (soundRequest) return soundRequest;
@@ -157,11 +161,14 @@ function closeJournal() { ui.journal.close(); ui['journal-open'].focus(); }
 function renderUI() {
   const env = environmentNow = environment(state);
   const trail = trailProfileAt(state.distance, state.seed);
+  const rest = state.rest;
   const walking = state.mode === 'walking';
-  ui.walk.setAttribute('aria-pressed', String(walking));
-  ui['walk-label'].textContent = walking ? 'Pause a moment' : state.distance > .1 ? 'Keep wandering' : 'Begin wandering';
-  ui.snack.setAttribute('aria-pressed', String(state.mode === 'snack'));
-  ui.sleep.setAttribute('aria-pressed', String(state.mode === 'sleep'));
+  const walkingNext = rest?.phase === 'exit' && rest.nextMode === 'walking';
+  ui.walk.setAttribute('aria-pressed', String(walking || walkingNext));
+  ui['walk-label'].textContent = walking ? 'Pause a moment' : walkingNext ? 'Cancel walking'
+    : state.distance > .1 ? 'Keep wandering' : 'Begin wandering';
+  ui.snack.setAttribute('aria-pressed', String(rest?.phase === 'exit' ? rest.nextMode === 'snack' : state.mode === 'snack'));
+  ui.sleep.setAttribute('aria-pressed', String(rest?.phase === 'exit' ? rest.nextMode === 'sleep' : state.mode === 'sleep'));
   const audible = state.sound && soundUnlocked;
   ui.sound.setAttribute('aria-pressed', String(audible));
   ui.sound.setAttribute('aria-label', audible ? 'Turn off sound' : 'Turn on sound');
@@ -179,10 +186,20 @@ function renderUI() {
   ui['distance-label'].textContent = meters < 1 ? 'The first few steps' : meters < 1000 ? `${meters} m along the trail` : `${(meters / 1000).toFixed(1)} km along the trail`;
   ui['journey-note'].textContent = state.mode === 'sleep' ? 'Let the world turn for a little while.' : env.period === 'night' ? 'Even the dark has its small wonders.' : 'There is nowhere you need to be.';
   // The night is shown in the actual scenery; a gentle fade only covers the middle of sleep.
-  const fade = state.mode === 'sleep' ? Math.sin(Math.min(1, state.modeTime / 7) * Math.PI) * .16 : 0;
+  const fade = rest?.kind === 'sleep' && rest.phase === 'idle'
+    ? Math.sin(Math.min(1, rest.time / 7) * Math.PI) * .16
+    : rest?.kind === 'sleep' && rest.phase === 'exit' && rest.fromPhase === 'idle'
+      ? Math.sin(Math.min(1, rest.fromTime / 7) * Math.PI) * .16 * (1 - Math.min(1, rest.time / .8)) : 0;
   ui['sleep-overlay'].style.opacity = String(fade);
   if (state.elapsed >= statusUntil) {
-    const message = state.mode === 'snack' ? 'A warm cup. A quiet place. Stay as long as you like.'
+    const message = rest?.phase === 'exit' ? walkingNext ? 'Packing up, then back to the trail.'
+        : rest.nextMode === 'sleep' ? 'Putting the snack away. A little rest next.'
+        : rest.nextMode === 'snack' ? 'Rolling up the bed. Something to eat next.'
+        : 'Packing everything away. No need to hurry.'
+      : rest?.phase === 'enter' ? rest.kind === 'snack'
+        ? 'A little stretch. A place to sit. Something from the backpack.'
+        : 'Unrolling a little bed beneath the trees.'
+      : state.mode === 'snack' ? 'A bite of bread. A warm cup. Stay as long as you like.'
       : state.mode === 'sleep' ? 'Rest easy. The trail will be here in the morning.'
       : state.mode === 'walking' ? env.weather === 'rain' ? 'Rain on leaves, and a path that keeps going.'
         : env.biome === 'stream' ? 'Follow the sound of running water.'
@@ -263,7 +280,7 @@ function frame(now) {
   audio.update(environmentNow, state.mode === 'walking' && !ui.journal.open, state);
   if (uiTimer > .25) { renderUI(); uiTimer = 0; }
   if (lastMode !== state.mode) {
-    if (lastMode === 'sleep' && state.mode === 'paused') status('A new morning. A little further to wander.', 5);
+    if (lastMode === 'sleep' && state.mode === 'paused') status('Back on your feet. Take your time.', 5);
     lastMode = state.mode; renderUI(); save();
   }
   if (saveTimer > 4) { save(); saveTimer = 0; }

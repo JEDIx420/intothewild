@@ -1,10 +1,11 @@
-import { Raster, rgb, hash, lerp, clamp, SIN, COS, R2 } from './pixel.js?v=5';
-import { pathAt, trailProfileAt, biomeAt, riverAt, waterAt, environment, TrailWorld } from './world.js?v=5';
-import { LandscapeTerrain } from './landscape.js?v=5';
-import { drawTraveller, drawCreature } from './actors.js?v=5';
-import { WildlifeDirector } from './wildlife.js?v=5';
-import { SPECIES } from './bestiary.js?v=5';
-import { makeTreeSprite, drawGroundPlant } from './vegetation.js?v=5';
+import { Raster, rgb, hash, lerp, clamp, SIN, COS, R2 } from './pixel.js?v=6';
+import { pathAt, trailProfileAt, biomeAt, riverAt, waterAt, environment, TrailWorld } from './world.js?v=6';
+import { LandscapeTerrain } from './landscape.js?v=6';
+import { drawTraveller, drawCreature } from './actors.js?v=6';
+import { sampleTraveller } from './traveller.js?v=6';
+import { WildlifeDirector } from './wildlife.js?v=6';
+import { SPECIES } from './bestiary.js?v=6';
+import { makeTreeSprite, drawGroundPlant } from './vegetation.js?v=6';
 
 const PAPER = rgb(250, 249, 246);
 export class ForestScene {
@@ -284,15 +285,19 @@ export class ForestScene {
     this.waterLife(state, env);
     for (const river of bridges.values()) this.bridge(river);
     const treeCount = active.filter(v => v.e.kind === 'tree').length;
-    const resting = state.mode === 'snack' || state.mode === 'sleep';
     const normal = Math.hypot(1, profile.slope);
-    const px = r.cameraX + (resting ? 1.12 / normal : 0);
-    const py = r.cameraY + (resting ? 1.12 * profile.slope / normal : 0);
+    const travellerPose = sampleTraveller({ time: state.elapsed, distance: state.distance,
+      mode: state.mode, modeTime: state.modeTime, rest: state.rest,
+      grade: profile.grade / normal, night: env.night > .4, reducedMotion: this.reducedMotion });
+    const restAmount = travellerPose.restAmount;
+    const px = r.cameraX + travellerPose.sideOffset / normal;
+    const py = r.cameraY + travellerPose.sideOffset * profile.slope / normal;
     const travellerGround = this.surface(-py, px);
     this.travellerPosition = { x: px, y: py };
-    const protectedPoint = r.project(px, py, travellerGround + (resting ? .6 : 1.2));
+    const protectedPoint = r.project(px, py, travellerGround + lerp(1.2, .6, restAmount));
     const pixelScale = r.scale / 12;
-    r.cutaways = [{ x: protectedPoint.sx, y: protectedPoint.sy, d: protectedPoint.d, rx: (resting ? 25 : 18) * pixelScale, ry: (resting ? 20 : 27) * pixelScale }];
+    r.cutaways = [{ x: protectedPoint.sx, y: protectedPoint.sy, d: protectedPoint.d,
+      rx: lerp(18, 25, restAmount) * pixelScale, ry: lerp(27, 20, restAmount) * pixelScale }];
     for (const animal of active) {
       if (!animal.motion || Math.abs(animal.motion.s - state.distance) > 9) continue;
       const point = r.project(animal.x, animal.y, animal.z + .6 + animal.motion.hop);
@@ -329,7 +334,7 @@ export class ForestScene {
         }
       } else this.smallProp(e, x, y, z, env, state.elapsed);
     }
-    drawTraveller(r, { x: px, y: py, z: travellerGround, yaw: Math.atan2(-1, profile.slope), grade: profile.grade / normal, groundAt: (x, y) => this.surface(-y, x), time: state.elapsed, distance: state.distance, mode: state.mode, modeTime: state.modeTime, night: env.night > .4, reducedMotion: this.reducedMotion });
+    drawTraveller(r, { x: px, y: py, z: travellerGround, yaw: Math.atan2(-1, profile.slope), grade: profile.grade / normal, groundAt: (x, y) => this.surface(-y, x), time: state.elapsed, distance: state.distance, mode: state.mode, modeTime: state.modeTime, rest: state.rest, pose: travellerPose, night: env.night > .4, reducedMotion: this.reducedMotion });
     this.hitTargets = this.hitTargets.filter(target => target.samples.some(sample => Math.abs(r.depth[sample.index] - sample.depth) < .001));
     this.hitTargets.sort((a, b) => b.depth - a.depth);
     r.applyShadows(); r.shadeEdges(); this.lighting(env); this.particles(state, env); r.present();

@@ -22,6 +22,16 @@ Walk a winding trail through mixed woodland, lively streams, open meadows, mount
 
 The panorama fills the available screen while the traveller keeps a small, detailed scale. The path climbs, turns beneath ridges and descends through valleys. A day lasts about five minutes; seasons change every two game days. Sleeping advances the clock. Your place and discoveries save automatically in this browser. A shared `?seed=12345` trail has its own save and leaves your main journey intact.
 
+## Taking a break
+
+A snack begins with a **4.4-second sequence**: finish the step, stretch, slip off the backpack, sit, open the pack and bring out bread and a cup. The traveller keeps taking little bites and sips while you watch the forest.
+
+Sleep has its own **4.8-second preparation**: set the pack down, sit, unroll the sleeping bag, take off the hat and curl into bed. Only then does the night pass. Waking includes sitting up, rolling and packing the bed, putting the backpack on and standing again.
+
+Walking resumes after packing up: **2.4 seconds after a snack**, or **3 seconds after sleeping**. You can change your mind during either sequence; the traveller recovers from the current pose and follows your latest choice. Pausing for field notes or hiding the tab pauses the animation, and saved journeys resume the same phase.
+
+![Snack and sleep animations, enlarged here to show the small gestures](docs/camp-animations.gif)
+
 ## A living wilderness
 
 There are **25 inhabitants**: foxes, deer, rabbits, robins, squirrels, badgers, boars, wolves, bears, lynx, wild horses, mountain ibex, owls, eagles, otters, ducks, herons, crocodiles, frogs, trout, butterflies, dragonflies, moonlit stags, lantern spirits and forest unicorns. Encounters are spread along the trail with long quiet stretches between them. Larger mammals are less common, horses occasionally appear in small family groups, trout sometimes jump from the streams, and a wetland may have a single basking crocodile. Pools and riverbanks are often unoccupied.

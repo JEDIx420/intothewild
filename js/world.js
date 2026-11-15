@@ -1,5 +1,6 @@
 // Pure journey rules and deterministic scenery. No DOM, timers or network state.
-import { SPECIES } from './bestiary.js?v=5';
+import { SPECIES } from './bestiary.js?v=6';
+import { REST_TIMING } from './traveller.js?v=6';
 const DEFAULT_SEED = 0x1d70a11d;
 const TAU = Math.PI * 2;
 const HOURS_PER_SECOND = 24 / 300;
@@ -273,7 +274,7 @@ export function trailProfileAt(s, seed = DEFAULT_SEED) {
 export function createJourney(seed = DEFAULT_SEED) {
   return {
     version: 1, seed: seedOf(seed), distance: 0, time: 8, elapsed: 0,
-    mode: 'paused', modeTime: 0, seen: [], sound: false,
+    mode: 'paused', modeTime: 0, rest: null, seen: [], sound: false,
   };
 }
 
@@ -283,37 +284,74 @@ function nextMorning(time) {
 }
 
 export function setActivity(state, mode) {
-  if (!state || !MODES.has(mode) || state.mode === mode) return state;
+  if (!state || !MODES.has(mode)) return state;
+  if (state.rest?.phase === 'exit') {
+    // A second request changes where to go next, never restarts the recovery.
+    state.rest.nextMode = mode;
+    return state;
+  }
+  if (state.mode === mode) return state;
   sleepSessions.delete(state);
+  if (state.rest) {
+    const rest = state.rest;
+    rest.fromPhase = rest.phase;
+    rest.fromTime = rest.time;
+    rest.fromElapsed = state.elapsed;
+    rest.phase = 'exit';
+    rest.time = 0;
+    rest.nextMode = mode;
+    return state;
+  }
+  const wasWalking = state.mode === 'walking';
+  const entryModeTime = state.modeTime;
   state.mode = mode;
   state.modeTime = 0;
-  if (mode === 'sleep') sleepSessions.set(state, { start: state.time, target: nextMorning(state.time) });
+  if (mode === 'snack' || mode === 'sleep') {
+    state.rest = { kind: mode, phase: 'enter', time: 0, wasWalking,
+      entryDistance: state.distance, entryElapsed: state.elapsed, entryModeTime };
+  }
   return state;
 }
 
 export function stepJourney(state, dt) {
   if (!state || !Number.isFinite(dt) || dt <= 0) return state;
-  const delta = Math.min(dt, .1);
-  state.elapsed += delta;
-  state.modeTime += delta;
-  if (state.mode === 'sleep') {
-    let session = sleepSessions.get(state);
-    if (!session) {
-      state.modeTime = delta;
-      session = { start: state.time, target: nextMorning(state.time) };
-      sleepSessions.set(state, session);
+  let remaining = Math.min(dt, .1);
+  // Split a frame at phase boundaries so a low frame rate cannot skip a pose,
+  // advance sleep before settling, or start walking before the pack is on.
+  while (remaining > 1e-10) {
+    const rest = state.rest;
+    const asleep = rest?.kind === 'sleep' && rest.phase === 'idle';
+    const duration = rest?.phase === 'enter' ? REST_TIMING[rest.kind].enter
+      : rest?.phase === 'exit' ? REST_TIMING[rest.kind].exit : asleep ? SLEEP_SECONDS : Infinity;
+    const delta = Math.min(remaining, Math.max(0, duration - (rest?.time || 0)));
+    state.elapsed += delta;
+    state.modeTime += delta;
+    if (rest) rest.time += delta;
+    if (asleep) {
+      let session = sleepSessions.get(state);
+      if (!session) {
+        session = { start: state.time, target: nextMorning(state.time) };
+        sleepSessions.set(state, session);
+      }
+      state.time = blend(session.start, session.target, smooth(rest.time / SLEEP_SECONDS));
+    } else {
+      state.time += delta * HOURS_PER_SECOND;
+      if (!rest && state.mode === 'walking') state.distance += delta * WALK_SPEED;
     }
-    const progress = clamp(state.modeTime / SLEEP_SECONDS, 0, 1);
-    state.time = blend(session.start, session.target, smooth(progress));
-    if (state.modeTime >= SLEEP_SECONDS - 1e-9) {
-      state.time = session.target;
-      state.mode = 'paused';
-      state.modeTime = 0;
-      sleepSessions.delete(state);
+    remaining -= delta;
+    if (rest && rest.time >= duration - 1e-9) {
+      if (rest.phase === 'enter') {
+        rest.phase = 'idle'; rest.time = 0;
+        if (rest.kind === 'sleep') sleepSessions.set(state, { start: state.time, target: nextMorning(state.time) });
+      } else if (rest.phase === 'exit') {
+        const next = rest.nextMode || 'paused';
+        state.rest = null; state.mode = 'paused'; state.modeTime = 0;
+        setActivity(state, next);
+      } else {
+        state.time = sleepSessions.get(state).target;
+        setActivity(state, 'paused');
+      }
     }
-  } else {
-    state.time += delta * HOURS_PER_SECOND;
-    if (state.mode === 'walking') state.distance += delta * WALK_SPEED;
   }
   if (state.seen.length > 48) state.seen.splice(0, state.seen.length - 48);
   return state;
@@ -552,6 +590,29 @@ function cleanSeen(value) {
   return result.reverse();
 }
 
+function cleanRest(raw, state) {
+  if (!raw || typeof raw !== 'object' || !REST_TIMING[raw.kind] || raw.kind !== state.mode
+    || !['enter', 'idle', 'exit'].includes(raw.phase)) return null;
+  const phaseLimit = raw.phase === 'idle' ? raw.kind === 'sleep' ? SLEEP_SECONDS : 1e10
+    : REST_TIMING[raw.kind][raw.phase];
+  const rest = {
+    kind: raw.kind, phase: raw.phase, time: clamp(finite(raw.time), 0, phaseLimit),
+    wasWalking: raw.wasWalking === true,
+    entryDistance: clamp(finite(raw.entryDistance, state.distance), 0, state.distance),
+    entryElapsed: clamp(finite(raw.entryElapsed, state.elapsed), 0, state.elapsed),
+    entryModeTime: clamp(finite(raw.entryModeTime), 0, 1e10),
+  };
+  if (rest.phase === 'exit') {
+    rest.fromPhase = raw.fromPhase === 'enter' ? 'enter' : 'idle';
+    const limit = rest.fromPhase === 'enter' ? REST_TIMING[rest.kind].enter
+      : rest.kind === 'sleep' ? SLEEP_SECONDS : 1e10;
+    rest.fromTime = clamp(finite(raw.fromTime), 0, limit);
+    rest.fromElapsed = clamp(finite(raw.fromElapsed, state.elapsed), 0, state.elapsed);
+    rest.nextMode = MODES.has(raw.nextMode) ? raw.nextMode : 'paused';
+  }
+  return rest;
+}
+
 function validatedSnapshot(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.version !== 1) return createJourney();
   const state = createJourney(raw.seed);
@@ -559,20 +620,31 @@ function validatedSnapshot(raw) {
   state.time = clamp(finite(raw.time, 8), 0, MAX_TIME);
   state.elapsed = clamp(finite(raw.elapsed), 0, 1e10);
   state.mode = MODES.has(raw.mode) ? raw.mode : 'paused';
-  state.modeTime = clamp(finite(raw.modeTime), 0, state.mode === 'sleep' ? SLEEP_SECONDS : 1e10);
+  state.modeTime = clamp(finite(raw.modeTime), 0, 1e10);
   state.seen = cleanSeen(raw.seen);
   state.sound = typeof raw.sound === 'boolean' ? raw.sound : false;
-  if (state.mode === 'sleep') {
+  if (state.mode === 'snack' || state.mode === 'sleep') {
+    // Version-one saves predate the animated setup. Resume their seated pose
+    // rather than replaying an entrance or discarding the existing journey.
+    const legacy = !Object.hasOwn(raw, 'rest');
+    state.rest = cleanRest(legacy ? {
+      kind: state.mode, phase: 'idle', time: state.modeTime, wasWalking: false,
+      entryDistance: state.distance, entryElapsed: Math.max(0, state.elapsed - state.modeTime), entryModeTime: 0,
+    } : raw.rest, state);
+    if (!state.rest) { state.mode = 'paused'; state.modeTime = 0; }
+  }
+  if (state.rest?.kind === 'sleep' && state.rest.phase === 'idle') {
     const start = raw.sleep?.start;
     const target = raw.sleep?.target;
-    const expected = blend(start, target, smooth(state.modeTime / SLEEP_SECONDS));
+    const expected = blend(start, target, smooth(state.rest.time / SLEEP_SECONDS));
     if (Number.isFinite(start) && Number.isFinite(target) && start >= 0 && target <= MAX_TIME
       && target > start && Math.abs(target - nextMorning(start)) < 1e-7
-      && Math.abs(state.time - expected) < 1e-6 && state.modeTime < SLEEP_SECONDS) {
+      && Math.abs(state.time - expected) < 1e-6 && state.rest.time < SLEEP_SECONDS) {
       sleepSessions.set(state, { start, target });
     } else {
       state.mode = 'paused';
       state.modeTime = 0;
+      state.rest = null;
     }
   }
   return state;

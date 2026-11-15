@@ -1,5 +1,5 @@
-import { pathAt, riverAt } from './world.js?v=5';
-import { SPECIES, REACTIONS } from './bestiary.js?v=5';
+import { pathAt, riverAt } from './world.js?v=6';
+import { SPECIES, REACTIONS } from './bestiary.js?v=6';
 
 const TAU = Math.PI * 2;
 const QUARTER = Math.PI / 2;

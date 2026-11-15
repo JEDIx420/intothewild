@@ -4,6 +4,7 @@ import {
   createJourney, stepJourney, setActivity, environment, pathAt, terrainAt,
   biomeAt, riverAt, waterAt, swampPoolsAt, pathSlopeAt, trailProfileAt, TrailWorld, serializeJourney, restoreJourney,
 } from '../js/world.js';
+import { REST_TIMING } from '../js/traveller.js';
 
 function advance(state, seconds) {
   const steps = Math.round(seconds * 10);
@@ -49,35 +50,116 @@ test('walking moves only forward; pausing and snacking preserve the place while 
   assert.ok(state.distance > place);
 });
 
-test('sleep reaches the next 07:00 after seven real seconds without changing location', () => {
-  for (const [start, target] of [[8, 31], [6, 7], [7, 31], [23, 31]]) {
+test('snack and sleep take several seconds to settle in, without moving or accelerating the clock', () => {
+  for (const kind of ['snack', 'sleep']) {
+    const state = createJourney(5);
+    setActivity(state, 'walking');
+    advance(state, 3);
+    const place = state.distance, time = state.time;
+    setActivity(state, kind);
+    assert.equal(state.rest.phase, 'enter');
+    assert.equal(state.rest.wasWalking, true);
+    assert.ok(REST_TIMING[kind].enter >= 3 && REST_TIMING[kind].enter <= 5);
+    advance(state, 3);
+    assert.equal(state.rest.phase, 'enter');
+    const progress = state.rest.time;
+    setActivity(state, kind);
+    assert.equal(state.rest.time, progress, 'a repeated request must not restart preparation');
+    advance(state, REST_TIMING[kind].enter - 3);
+    assert.equal(state.rest.phase, 'idle');
+    assert.equal(state.distance, place);
+    close(state.time, time + REST_TIMING[kind].enter * .08);
+  }
+});
+
+test('sleep prepares first, reaches the next morning while asleep, then visibly wakes without travelling', () => {
+  for (const [start, target] of [[8, 31], [6, 7], [6.8, 31], [7, 31], [23, 31]]) {
     const state = createJourney();
     state.time = start;
     state.distance = 19;
     setActivity(state, 'sleep');
+    advance(state, REST_TIMING.sleep.enter);
+    close(state.time, start + REST_TIMING.sleep.enter * .08);
+    assert.equal(state.rest.phase, 'idle');
     advance(state, 3);
     assert.ok(state.time >= start && state.time < target);
     assert.equal(state.mode, 'sleep');
     advance(state, 4);
-    assert.equal(state.time, target);
+    close(state.time, target);
     assert.equal(state.distance, 19);
+    assert.equal(state.mode, 'sleep', 'morning starts recovery instead of teleporting upright');
+    assert.equal(state.rest.phase, 'exit');
+    advance(state, REST_TIMING.sleep.exit);
     assert.equal(state.mode, 'paused');
+    assert.equal(state.rest, null);
+    assert.equal(state.distance, 19);
+    close(state.time, target + REST_TIMING.sleep.exit * .08);
   }
 });
 
-test('a cancelled sleep keeps current time and never later jumps to its abandoned target', () => {
-  const state = createJourney();
-  setActivity(state, 'sleep');
-  advance(state, 2);
-  const cancelTime = state.time;
-  setActivity(state, 'snack');
-  advance(state, 6);
-  close(state.time, cancelTime + 6 * .08);
-  assert.equal(state.mode, 'snack');
-  assert.equal(state.distance, 0);
+test('cancelling sleep during preparation or actual sleep abandons its morning target', () => {
+  for (const cancelAt of [2, REST_TIMING.sleep.enter + 2]) {
+    const state = createJourney();
+    setActivity(state, 'sleep');
+    advance(state, cancelAt);
+    const cancelTime = state.time;
+    setActivity(state, 'snack');
+    assert.equal(state.rest.phase, 'exit');
+    assert.equal(state.rest.nextMode, 'snack');
+    const recoveryAndSnack = REST_TIMING.sleep.exit + REST_TIMING.snack.enter + 10;
+    advance(state, recoveryAndSnack);
+    close(state.time, cancelTime + recoveryAndSnack * .08);
+    assert.equal(state.mode, 'snack');
+    assert.equal(state.rest.phase, 'idle');
+    assert.equal(state.distance, 0);
+  }
 });
 
-test('save and resume retain a journey and an in-progress sleep without offline progression', () => {
+test('walking waits for packing and standing after cancellations throughout either rest sequence', () => {
+  for (const kind of ['snack', 'sleep']) for (const cancelAt of [.2, 2.1, REST_TIMING[kind].enter - .1, REST_TIMING[kind].enter + 2]) {
+    const state = createJourney();
+    state.distance = 17;
+    setActivity(state, kind);
+    advance(state, cancelAt);
+    const phase = state.rest.phase, phaseTime = state.rest.time;
+    setActivity(state, 'walking');
+    assert.equal(state.rest.phase, 'exit');
+    assert.equal(state.rest.fromPhase, phase);
+    close(state.rest.fromTime, phaseTime);
+    advance(state, REST_TIMING[kind].exit - .1);
+    assert.equal(state.rest.phase, 'exit');
+    assert.equal(state.distance, 17);
+    stepJourney(state, .1);
+    assert.equal(state.mode, 'walking');
+    assert.equal(state.rest, null);
+    close(state.distance, 17);
+    stepJourney(state, .1);
+    close(state.distance, 17.115);
+  }
+});
+
+test('rapid activity changes update the destination without restarting recovery or causing delayed sleep', () => {
+  const state = createJourney();
+  setActivity(state, 'snack');
+  advance(state, REST_TIMING.snack.enter + 1);
+  setActivity(state, 'sleep');
+  advance(state, .4);
+  const phaseTime = state.rest.time, fromTime = state.rest.fromTime, clock = state.time;
+  for (const requested of ['walking', 'sleep', 'snack', 'walking', 'paused']) {
+    setActivity(state, requested);
+    assert.equal(state.rest.phase, 'exit');
+    assert.equal(state.rest.time, phaseTime);
+    assert.equal(state.rest.fromTime, fromTime);
+    assert.equal(state.rest.nextMode, requested);
+  }
+  advance(state, REST_TIMING.snack.exit - .4 + 15);
+  assert.equal(state.mode, 'paused');
+  assert.equal(state.rest, null);
+  assert.equal(state.distance, 0);
+  close(state.time, clock + (REST_TIMING.snack.exit - .4 + 15) * .08);
+});
+
+test('save and resume retain a journey without offline progression', () => {
   const state = createJourney(0xfedcba98);
   setActivity(state, 'walking');
   advance(state, 12);
@@ -88,16 +170,57 @@ test('save and resume retain a journey and an in-progress sleep without offline 
   stepJourney(state, .1);
   stepJourney(resumed, .1);
   assert.deepEqual(resumed, state);
-  setActivity(state, 'sleep');
-  advance(state, 2.3);
-  const sleeping = restoreJourney(serializeJourney(state));
-  assert.deepEqual(sleeping, state);
-  advance(state, 4.7);
-  advance(sleeping, 4.7);
-  assert.deepEqual(sleeping, state);
-  assert.equal(sleeping.mode, 'paused');
-  assert.ok(serializeJourney(sleeping).length < 900);
   assert.equal(createJourney(state.seed).distance, 0);
+});
+
+test('saving any preparation, idle or recovery phase preserves its clock, pose timing and next action', () => {
+  for (const kind of ['snack', 'sleep']) for (const phase of ['enter', 'idle', 'exit']) {
+    const state = createJourney(0xfedcba98);
+    state.distance = 127;
+    state.seen = ['fox', 'unicorn'];
+    setActivity(state, kind);
+    advance(state, phase === 'enter' ? 2.3 : REST_TIMING[kind].enter + 2.3);
+    if (phase === 'exit') {
+      setActivity(state, 'walking');
+      advance(state, .7);
+    }
+    assert.equal(state.rest.phase, phase);
+    const saved = serializeJourney(state), resumed = restoreJourney(saved);
+    assert.deepEqual(resumed, state);
+    assert.ok(saved.length < 1200, 'rest timing must not turn a small save into an animation recording');
+    for (let step = 0; step < 180; step++) {
+      stepJourney(state, .1);
+      stepJourney(resumed, .1);
+      assert.deepEqual(resumed, state, `${kind} ${phase} diverged after reload at frame ${step}`);
+    }
+  }
+});
+
+test('legacy saves retain their journey and migrate resting modes without replaying preparation', () => {
+  const legacy = {
+    version: 1, seed: 73, distance: 420, time: 14, elapsed: 500,
+    mode: 'snack', modeTime: 12.5, seen: ['fox', 'deer'], sound: true,
+  };
+  const snack = restoreJourney(legacy);
+  assert.equal(snack.seed, legacy.seed);
+  assert.equal(snack.distance, legacy.distance);
+  assert.equal(snack.time, legacy.time);
+  assert.deepEqual(snack.seen, legacy.seen);
+  assert.equal(snack.rest.kind, 'snack');
+  assert.equal(snack.rest.phase, 'idle');
+  close(snack.rest.time, 12.5);
+  const progress = 2.3 / 7, smoothProgress = progress * progress * (3 - 2 * progress);
+  const oldSleep = { ...legacy, mode: 'sleep', modeTime: 2.3,
+    time: 8 + (31 - 8) * smoothProgress, sleep: { start: 8, target: 31 } };
+  const sleeping = restoreJourney(oldSleep);
+  assert.equal(sleeping.rest.kind, 'sleep');
+  assert.equal(sleeping.rest.phase, 'idle');
+  close(sleeping.rest.time, 2.3);
+  close(sleeping.time, oldSleep.time);
+  assert.equal(sleeping.distance, 420);
+  advance(sleeping, 4.7);
+  close(sleeping.time, 31);
+  assert.equal(sleeping.rest.phase, 'exit');
 });
 
 test('corrupt, old and oversized saves fall back safely; invalid fields and encounter history are bounded', () => {
