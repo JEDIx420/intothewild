@@ -1,5 +1,5 @@
-import { terrainAt, trailProfileAt, riverAt, biomeAt, swampPoolsAt } from './world.js?v=4';
-import { Raster, rgb, hash, noise, clamp, lerp, SIN, COS, R2 } from './pixel.js?v=4';
+import { terrainAt, trailProfileAt, riverAt, biomeAt, swampPoolsAt } from './world.js?v=5';
+import { Raster, rgb, hash, noise, clamp, lerp, SIN, COS, R2 } from './pixel.js?v=5';
 
 const GRASS = [[111, 137, 81], [103, 127, 74], [147, 132, 80], [199, 211, 200]];
 const SHADOW_STEPS = [3, 6, 10, 16, 24];

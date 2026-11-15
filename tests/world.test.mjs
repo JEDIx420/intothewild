@@ -154,10 +154,13 @@ test('streaming retains exactly five chunks with bounded entities, including sce
   }
 });
 
-test('opening guarantees wildlife and a magical encounter within the first 35 seconds of walking', () => {
+test('opening introduces one fox, leaving the next stretch quiet and magic unforced', () => {
   const world = new TrailWorld(1);
-  assert.ok(world.entities.some(entity => entity.variant === 'fox' && entity.s === 5 && entity.side === 2.5));
-  assert.ok(world.entities.some(entity => entity.variant === 'spirit' && entity.s >= 0 && entity.s / 1.15 < 35));
+  const opening = world.entities.filter(entity => entity.kind === 'animal' && entity.s >= 0 && entity.s < 35);
+  assert.equal(opening.length, 1);
+  assert.equal(opening[0].variant, 'fox');
+  assert.equal(opening[0].s, 5);
+  assert.equal(opening[0].mystical, false);
 });
 
 test('biomes form coherent stretches and the first stream follows the opening forest', () => {
@@ -301,10 +304,10 @@ test('wetland pools have real basins, dry trails and continuous banks', () => {
   }
 });
 
-test('habitats populate all 24 species, 12 tree silhouettes, water life and horse herds', () => {
+test('long journeys retain all 25 species, 12 tree silhouettes, water life and occasional horse herds', () => {
   const world = new TrailWorld(28), species = new Set(), trees = new Set();
   let horses = false, waterLife = false, crocodiles = false;
-  for (let distance = 0; distance < 3600; distance += 54) {
+  for (let distance = 0; distance < 12000; distance += 54) {
     world.update(distance);
     const herds = new Map();
     for (const e of world.entities) {
@@ -313,7 +316,7 @@ test('habitats populate all 24 species, 12 tree silhouettes, water life and hors
       species.add(e.variant);
       if (e.variant === 'horse' && e.group) herds.set(e.group, (herds.get(e.group) || 0) + 1);
       if (e.variant === 'fish' || e.variant === 'otter') {
-        assert.equal(e.water?.kind, 'stream'); waterLife = true;
+        assert.ok(['stream', 'swamp'].includes(e.water?.kind)); waterLife = true;
       }
       if (e.variant === 'crocodile') {
         assert.equal(e.water?.kind, 'swamp'); crocodiles = true;
@@ -321,7 +324,36 @@ test('habitats populate all 24 species, 12 tree silhouettes, water life and hors
     }
     horses ||= [...herds.values()].some(count => count >= 3);
   }
-  assert.equal(species.size, 24);
+  assert.equal(species.size, 25);
   assert.equal(trees.size, 12);
   assert.ok(horses && waterLife && crocodiles);
+});
+
+test('encounters leave long quiet gaps, small families, sparse water life and genuinely rare magic', () => {
+  for (const seed of [1, 28, 42, 532, createJourney().seed]) {
+    const world = new TrailWorld(seed), animals = new Map();
+    for (let distance = 0; distance < 12000; distance += 72) {
+      world.update(distance);
+      for (const e of world.entities) if (e.kind === 'animal' && e.s >= 0 && e.s < 12000) animals.set(e.id, e);
+    }
+    const all = [...animals.values()];
+    assert.ok(all.length > 150 && all.length < 420, 'the full variety must stay much more spread out');
+    const encounters = new Map(), groups = new Map(), waterResidents = new Map();
+    for (const e of all) {
+      if (e.encounter) encounters.set(e.encounter, e.encounterS);
+      if (e.group) groups.set(e.group, (groups.get(e.group) || 0) + 1);
+      if (e.water) {
+        const waterId = e.water.id || `river:${e.water.center}`;
+        waterResidents.set(waterId, (waterResidents.get(waterId) || 0) + 1);
+      }
+    }
+    const positions = [...encounters.values()].sort((a, b) => a - b);
+    for (let n = 1; n < positions.length; n++) assert.ok(positions[n] - positions[n - 1] >= 33.9);
+    assert.ok([...groups.values()].every(count => count <= 3));
+    assert.ok([...waterResidents.values()].every(count => count <= 2));
+    const magical = all.filter(e => e.mystical).sort((a, b) => a.s - b.s);
+    assert.ok(magical.length > 0 && magical.length < all.length * .13);
+    for (let n = 1; n < magical.length; n++) assert.ok(magical[n].s - magical[n - 1].s >= 225.9);
+    assert.ok(magical.every(e => ['unicorn', 'stag', 'spirit'].includes(e.variant) && !e.group));
+  }
 });

@@ -1,5 +1,5 @@
 // Pure journey rules and deterministic scenery. No DOM, timers or network state.
-import { SPECIES } from './bestiary.js?v=4';
+import { SPECIES } from './bestiary.js?v=5';
 const DEFAULT_SEED = 0x1d70a11d;
 const TAU = Math.PI * 2;
 const HOURS_PER_SECOND = 24 / 300;
@@ -349,13 +349,42 @@ const TREE_TYPES = {
   enchanted: ['maple', 'cedar', 'oak', 'willow', 'rowan', 'birch'],
 };
 const LAND_FAUNA = {
-  forest: ['fox', 'deer', 'rabbit', 'squirrel', 'bird', 'badger', 'boar', 'wolf', 'bear', 'owl'],
-  stream: ['heron', 'bird', 'deer', 'rabbit', 'butterfly', 'dragonfly'],
-  meadow: ['horse', 'deer', 'rabbit', 'butterfly', 'bird', 'fox', 'eagle'],
-  mountain: ['goat', 'goat', 'eagle', 'lynx', 'wolf', 'bear', 'bird'],
-  swamp: ['heron', 'dragonfly', 'frog', 'bird', 'boar'],
-  enchanted: ['stag', 'spirit', 'butterfly', 'deer', 'owl', 'fox'],
+  forest: [['rabbit', 23], ['squirrel', 20], ['bird', 16], ['deer', 15], ['fox', 10], ['badger', 6], ['owl', 4], ['boar', 3], ['wolf', 2], ['bear', 1]],
+  stream: [['bird', 28], ['butterfly', 20], ['dragonfly', 24], ['rabbit', 16], ['deer', 12]],
+  meadow: [['horse', 18], ['deer', 18], ['rabbit', 20], ['butterfly', 20], ['bird', 16], ['fox', 6], ['eagle', 2]],
+  mountain: [['goat', 40], ['eagle', 20], ['bird', 20], ['lynx', 8], ['wolf', 8], ['bear', 4]],
+  swamp: [['heron', 20], ['dragonfly', 35], ['frog', 25], ['bird', 15], ['boar', 5]],
+  enchanted: [['butterfly', 28], ['deer', 24], ['owl', 12], ['fox', 12], ['squirrel', 24]],
 };
+const ENCOUNTER_SPACING = 48;
+
+function encounterAt(cell, seed) {
+  const s = cell * ENCOUNTER_SPACING + 13 + randomAt(seed, cell, 701) * 14;
+  // The opening has one fox. Everything after it uses the same spaced rules.
+  if (s >= -20 && s < 35) return null;
+  const biome = biomeAt(s, seed);
+  // One possible magical visitor in each five-slot stretch, with some of those
+  // stretches staying ordinary. Magic replaces a regular encounter; it never
+  // adds a second creature or a herd beside it.
+  const mystical = cell >= 2 && cell % 5 === 2 && randomAt(seed, Math.floor(cell / 5), 718) < .65;
+  if (!mystical && randomAt(seed, cell, 702) >= .78) return null;
+  let variant;
+  if (mystical) {
+    const choices = biome === 'forest' || biome === 'meadow' || biome === 'enchanted'
+      ? ['unicorn', 'stag', 'spirit'] : ['spirit'];
+    variant = choices[Math.floor(randomAt(seed, cell, 703) * choices.length)];
+  } else {
+    const choices = LAND_FAUNA[biome];
+    let roll = randomAt(seed, cell, 703) * choices.reduce((sum, [, weight]) => sum + weight, 0);
+    variant = choices[choices.length - 1][0];
+    for (const [kind, weight] of choices) { roll -= weight; if (roll < 0) { variant = kind; break; } }
+  }
+  const side = (randomAt(seed, cell, 704) < .5 ? -1 : 1) * (3.2 + randomAt(seed, cell, 705) * 4.2);
+  if (riverAt(s, seed) || waterAt(s, pathAt(s, seed) + side, seed)) return null;
+  const count = variant === 'horse' ? 2 + (randomAt(seed, cell, 706) < .4 ? 1 : 0)
+    : variant === 'goat' && randomAt(seed, cell, 706) < .25 ? 2 : 1;
+  return { cell, s, side, variant, count, mystical };
+}
 
 function makeChunk(index, seed) {
   const start = index * CHUNK_LENGTH;
@@ -423,38 +452,38 @@ function makeChunk(index, seed) {
     add(kind, kind === 'flowers' ? choose(['white', 'blue', 'gold', 'pink']) : kind === 'mushroom' && biome === 'enchanted' ? 'glowing' : 'wild', s, side, .65 + random() * .75);
   }
 
-  // Each stretch has its own residents. Encounters are dispersed, never a zoo
-  // placed at one point, and larger animals have smaller family groups.
-  const centerBiome = biomeAt(start + 9, seed);
-  const encounters = centerBiome === 'meadow' ? 2 : 3;
-  for (let slot = 0; slot < encounters; slot++) {
-    const s = start + 3 + slot * 5 + random() * 2;
-    const biome = biomeAt(s, seed), variant = choose(LAND_FAUNA[biome]);
-    const side = (random() < .5 ? -1 : 1) * (2.8 + random() * 4.5);
-    if (waterAt(s, pathAt(s, seed) + side, seed)) continue;
-    if (variant === 'horse') {
-      const group = `herd:${index}:${slot}`, count = 3 + Math.floor(random() * 2);
-      for (let k = 0; k < count; k++) animal('horse', s + k * .8, side + (k % 2) * 1.5, { group });
-    } else if (variant === 'goat' && random() < .6) {
-      const group = `goats:${index}:${slot}`;
-      for (let k = 0; k < 2; k++) animal('goat', s + k * 1.2, side + k * .9, { group });
-    } else animal(variant, s, side);
-  }
-  if (centerBiome === 'meadow' && index % 3 === 0 && !entities.some(e => e.variant === 'horse')) {
-    for (let k = 0; k < 3; k++) animal('horse', start + 7 + k * 1.2, -4.8 - (k % 2) * 1.6, { group: `herd:${index}` });
+  // Global encounter slots cross chunk boundaries cleanly. Empty slots leave
+  // longer quiet stretches; nearby members of one family count as one sighting.
+  for (let cell = Math.floor((start - 4) / ENCOUNTER_SPACING); cell <= Math.floor((start + CHUNK_LENGTH) / ENCOUNTER_SPACING); cell++) {
+    const encounter = encounterAt(cell, seed);
+    if (!encounter) continue;
+    const { s, side, variant, count, mystical } = encounter;
+    for (let member = 0; member < count; member++) {
+      const position = s + member * 1.2;
+      if (position < start || position >= start + CHUNK_LENGTH) continue;
+      animal(variant, position, side + (member % 2) * 1.4, {
+        encounter: `trail:${cell}`, encounterS: s, mystical,
+        ...(count > 1 ? { group: `family:${cell}` } : {}),
+      });
+    }
   }
 
-  // Every actual stream crossing has swimmers, a bird on the bank and reeds.
+  // Rivers can be quiet too: an occasional trout or one visitor along a bank.
   const rivers = new Map();
   for (let s = start; s < start + CHUNK_LENGTH; s += 2) {
     const river = riverAt(s, seed);
     if (river && river.center >= start && river.center < start + CHUNK_LENGTH) rivers.set(river.center, river);
   }
   for (const water of rivers.values()) {
-    for (const [kind, side] of [['fish', -4.2], ['fish', 6.8], ['duck', 4.4], ['otter', -7.5]]) {
-      animal(kind, water.center, side, { water });
+    const key = Math.floor(water.center * 10);
+    if (randomAt(seed, key, 901) < .72) {
+      animal('fish', water.center, randomAt(seed, key, 902) < .5 ? -4.2 : 6.8, { water });
     }
-    animal('heron', water.center - water.width / 2 - 1, 5.8, { water });
+    if (randomAt(seed, key, 903) < .4) {
+      const kind = ['duck', 'otter', 'heron'][Math.floor(randomAt(seed, key, 904) * 3)];
+      animal(kind, kind === 'heron' ? water.center - water.width / 2 - 1 : water.center,
+        randomAt(seed, key, 905) < .5 ? -6.3 : 5.8, { water });
+    }
     for (const bank of [-1, 1]) for (const side of [-7, 3.8, 8]) {
       const s = water.center + bank * (water.width / 2 + .8);
       if (s >= start && s < start + CHUNK_LENGTH) add('reeds', 'bank', s, side, 1);
@@ -466,23 +495,22 @@ function makeChunk(index, seed) {
   }
   for (const water of pools.values()) {
     const side = water.x - pathAt(water.s, seed);
-    animal('crocodile', water.s, side + water.bank * (water.rx + .6), { water });
-    animal('frog', water.s + 2, side + water.bank * (water.rx + .3), { water });
-    animal('dragonfly', water.s - 1, side, { water });
-    animal('duck', water.s, side, { water });
+    const region = regionAt(water.s, seed), localPools = poolsInRegion(region, seed);
+    const chosen = localPools[Math.floor(randomAt(seed, region, 911) * localPools.length)];
+    if (chosen?.id === water.id && randomAt(seed, region, 912) < .7) {
+      const roll = randomAt(seed, region, 913);
+      const kind = roll < .55 ? 'crocodile' : roll < .75 ? 'heron' : roll < .9 ? 'otter' : 'duck';
+      const bank = kind === 'crocodile' || kind === 'heron';
+      animal(kind, water.s, side + (bank ? water.bank * (water.rx + .6) : 0), { water });
+    }
+    if (randomAt(seed, Math.floor(water.s * 10), 914) < .16) {
+      const kind = randomAt(seed, Math.floor(water.s), 915) < .5 ? 'frog' : 'dragonfly';
+      animal(kind, water.s + 1, side + (kind === 'frog' ? water.bank * (water.rx + .3) : 0), { water });
+    }
     for (let k = 0; k < 3; k++) add('lily', 'water', water.s + (k - 1) * 1.5, side + (k - 1) * 1.1, .9, { water });
     for (const direction of [-1, 1]) add('reeds', 'wetland', water.s, side + direction * (water.rx + .4), 1.2);
   }
-  if (index === 0) {
-    animal('fox', 5, 2.5);
-    animal('rabbit', 10.5, -3.1);
-    animal('squirrel', 14, 4.5);
-  }
-  if (index === 1) {
-    animal('deer', 22, -4.5);
-    animal('spirit', 29.2, -3.6);
-    animal('bird', 32, 3.5);
-  }
+  if (index === 0) animal('fox', 5, 2.5, { encounter: 'opening', encounterS: 5, mystical: false });
   return { index, start, end: start + CHUNK_LENGTH, entities };
 }
 

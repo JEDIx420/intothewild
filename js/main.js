@@ -1,7 +1,7 @@
-import { createJourney, stepJourney, setActivity, environment, serializeJourney, restoreJourney, trailProfileAt } from './world.js?v=4';
-import { ForestScene } from './scene.js?v=4';
-import { ForestAudio } from './audio.js?v=4';
-import { SPECIES } from './bestiary.js?v=4';
+import { createJourney, stepJourney, setActivity, environment, serializeJourney, restoreJourney, trailProfileAt } from './world.js?v=5';
+import { ForestScene } from './scene.js?v=5';
+import { ForestAudio } from './audio.js?v=5';
+import { SPECIES } from './bestiary.js?v=5';
 
 const SOUND_KEY = 'into-the-wild.sound.v2';
 const params = new URLSearchParams(location.search);
@@ -255,7 +255,7 @@ function frame(now) {
     for (const animal of scene.visibleAnimals) {
       if (!state.seen.includes(animal.kind)) {
         state.seen.push(animal.kind);
-        if (state.elapsed >= statusUntil) status(animal.kind === 'spirit' || animal.kind === 'stag' ? `${animal.name}. Some stories are true.` : `${animal.name}. A little encounter, remembered.`, 5);
+        if (state.elapsed >= statusUntil) status(['spirit', 'stag', 'unicorn'].includes(animal.kind) ? `${animal.name}. Some stories are true.` : `${animal.name}. A little encounter, remembered.`, 5);
         save(); break;
       }
     }

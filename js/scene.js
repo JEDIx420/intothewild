@@ -1,10 +1,10 @@
-import { Raster, rgb, hash, lerp, clamp, SIN, COS, R2 } from './pixel.js?v=4';
-import { pathAt, trailProfileAt, biomeAt, riverAt, waterAt, environment, TrailWorld } from './world.js?v=4';
-import { LandscapeTerrain } from './landscape.js?v=4';
-import { drawTraveller, drawCreature } from './actors.js?v=4';
-import { WildlifeDirector } from './wildlife.js?v=4';
-import { SPECIES } from './bestiary.js?v=4';
-import { makeTreeSprite, drawGroundPlant } from './vegetation.js?v=4';
+import { Raster, rgb, hash, lerp, clamp, SIN, COS, R2 } from './pixel.js?v=5';
+import { pathAt, trailProfileAt, biomeAt, riverAt, waterAt, environment, TrailWorld } from './world.js?v=5';
+import { LandscapeTerrain } from './landscape.js?v=5';
+import { drawTraveller, drawCreature } from './actors.js?v=5';
+import { WildlifeDirector } from './wildlife.js?v=5';
+import { SPECIES } from './bestiary.js?v=5';
+import { makeTreeSprite, drawGroundPlant } from './vegetation.js?v=5';
 
 const PAPER = rgb(250, 249, 246);
 export class ForestScene {

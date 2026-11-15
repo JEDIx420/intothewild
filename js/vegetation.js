@@ -1,4 +1,4 @@
-import { Raster, hash, clamp, lerp } from './pixel.js?v=4';
+import { Raster, hash, clamp, lerp } from './pixel.js?v=5';
 
 const LEAF = [
   [[51, 85, 57], [91, 126, 69], [147, 169, 99]],

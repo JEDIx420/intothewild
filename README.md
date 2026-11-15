@@ -24,9 +24,11 @@ The panorama fills the available screen while the traveller keeps a small, detai
 
 ## A living wilderness
 
-There are **24 inhabitants**: foxes, deer, rabbits, robins, squirrels, badgers, boars, wolves, bears, lynx, wild horses, mountain ibex, owls, eagles, otters, ducks, herons, crocodiles, frogs, trout, butterflies, dragonflies, moonlit stags and lantern spirits. Each belongs to an appropriate habitat. Horses appear in herds, trout jump without needing a tap, and crocodiles spend time basking beside wetland pools.
+There are **25 inhabitants**: foxes, deer, rabbits, robins, squirrels, badgers, boars, wolves, bears, lynx, wild horses, mountain ibex, owls, eagles, otters, ducks, herons, crocodiles, frogs, trout, butterflies, dragonflies, moonlit stags, lantern spirits and forest unicorns. Encounters are spread along the trail with long quiet stretches between them. Larger mammals are less common, horses occasionally appear in small family groups, trout sometimes jump from the streams, and a wetland may have a single basking crocodile. Pools and riverbanks are often unoccupied.
 
-Touches draw from **105 species-specific responses**, with different movement and poses: approaching, startling, bounding away, rearing, grazing, listening, opening jaws, diving, splashing and more. Reactions begin at the animal’s current position and blend back into its usual activity. Animals keep moving while you pause or take a snack. The field notes remember the species you discover.
+A forest unicorn, moonlit stag or lantern spirit is a rare surprise. These solitary magical visitors replace an ordinary encounter and are spaced well apart; they are never guaranteed in the opening. Unicorns have a pale coat, a softly lit horn and a few intermittent glints, with gentle reactions when approached.
+
+Touches draw from **110 species-specific responses**, with different movement and poses: approaching, startling, bounding away, rearing, grazing, listening, opening jaws, diving, splashing and more. Reactions begin at the animal’s current position and blend back into its usual activity. Animals keep moving while you pause or take a snack. The field notes remember the species you discover.
 
 **Twelve tree silhouettes** mix with grass, ferns, flowering patches, shrubs, reeds, lilies, mushrooms and fallen logs. Foliage moves in coherent wind while trunks stay rooted. Rolling ground, exposed ridge faces, soil and moss patches, terrain-following shadows and shallow water basins give each habitat a different character. Streams have moving currents, foam, ripples and aquatic life.
 

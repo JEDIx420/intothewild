@@ -373,18 +373,19 @@ function spirit(r, P, scale, t, seed) {
 // The new inhabitants deliberately have different proportions and outlines:
 // long horse necks, low badger bodies, tufted lynx ears, a crocodile's broad
 // snout, and large bird wings remain readable at the traveller's small scale.
-function horse(r, P, scale, t, seed, motion) {
+function horse(r, P, scale, t, seed, motion, unicorn = false) {
   const coats = [[129, 83, 54], [171, 142, 103], [95, 91, 81], [209, 205, 181]];
-  const coat = coats[seed % coats.length], mane = seed % 4 === 3 ? [126, 126, 111] : [56, 47, 40];
+  const coat = unicorn ? [217, 225, 210] : coats[seed % coats.length];
+  const mane = unicorn ? [156, 183, 190] : seed % 4 === 3 ? [126, 126, 111] : [56, 47, 40];
   const rear = motion.rear, angle = rear * .65;
   const R = (f, s, z) => P(-.63 + (f + .63) * Math.cos(angle) - z * Math.sin(angle), s,
     (f + .63) * Math.sin(angle) + z * Math.cos(angle));
-  walkingLegs(r, R, scale, motion, [-.59, .53], .235, 1.12, coat, mane, C.hoof, .36);
+  walkingLegs(r, R, scale, motion, [-.59, .53], .235, 1.12, coat, mane, unicorn ? [132, 156, 157] : C.hoof, .36);
   bone(r, R(-.55, 0, 1.24), R(.43, 0, 1.29), .37 * scale, .37 * scale, coat);
-  const dip = motion.graze - (motion.activity === 'call' ? motion.alert * .09 : 0);
+  const dip = motion.graze * (unicorn ? .7 : 1) - (motion.activity === 'call' ? motion.alert * .09 : 0);
   bone(r, R(.42, 0, 1.35), R(.69 + dip * .45, 0, 1.98 - dip * 1.25), .28 * scale, .19 * scale, coat);
   bone(r, R(.7 + dip * .45, 0, 2.02 - dip * 1.25), R(1.02 + dip * .45, 0, 1.72 - dip * 1.25), .19 * scale, .13 * scale, coat);
-  ball(r, R(1.02 + dip * .45, 0, 1.73 - dip * 1.25), .13 * scale, [81, 71, 63]);
+  ball(r, R(1.02 + dip * .45, 0, 1.73 - dip * 1.25), .13 * scale, unicorn ? [166, 183, 175] : [81, 71, 63]);
   bone(r, R(.82 + dip * .45, -.04, 1.99 - dip * 1.25), R(.99 + dip * .45, -.04, 1.79 - dip * 1.25), .055 * scale, .035 * scale, C.cream);
   for (const side of [-1, 1]) {
     bone(r, R(.6 + dip * .45, side * .12, 2.12 - dip * 1.25), R(.57 + dip * .45, side * .16, 2.38 - dip * 1.25), .065 * scale, .022 * scale, coat);
@@ -397,6 +398,24 @@ function horse(r, P, scale, t, seed, motion) {
   const swish = Math.sin(t * 1.7 + seed) * .23;
   bone(r, R(-.83, 0, 1.33), R(-1.1, swish, .92), .13 * scale, .14 * scale, mane);
   bone(r, R(-1.1, swish, .92), R(-1.18, swish * 1.4, .41), .14 * scale, .045 * scale, mane);
+  if (unicorn) {
+    // One slim, gently lit horn makes the small silhouette readable. The rest
+    // remains a quiet animal, with occasional glints rather than a light cloud.
+    const horn = [231, 237, 194], tip = [247, 247, 212];
+    const base = R(.79 + dip * .45, 0, 2.08 - dip * 1.25);
+    const middle = R(.87 + dip * .58, 0, 2.45 - dip * 1.42);
+    const point = R(.95 + dip * .72, 0, 2.82 - dip * 1.6);
+    bone(r, base, middle, .055 * scale, .032 * scale, horn, 'glow');
+    bone(r, middle, point, .032 * scale, .006 * scale, tip, 'glow');
+    for (let k = 0; k < 3; k++) {
+      const phase = t * .9 + seed * .013 + k * 2.3;
+      if (Math.sin(phase) < .72) continue;
+      const glint = k === 0 ? R(.3 + Math.sin(phase) * .1, -.15, 1.64)
+        : R(k === 1 ? -.58 : .52, k === 1 ? -.31 : .31, .12 + Math.sin(phase * 1.3) * .035);
+      r.plot(...glint, [219, 236, 207]);
+      if (Math.sin(phase) > .94) r.plot(glint[0], glint[1], glint[2] + .08, tip);
+    }
+  }
 }
 
 function wolf(r, P, scale, t, seed, motion) {
@@ -736,13 +755,14 @@ export function drawCreature(r, options = {}) {
     };
   }
   if (!['fish', 'duck', 'otter', 'butterfly', 'dragonfly', 'spirit'].includes(kind)) r.shadow(x, y, z,
-    (['deer', 'stag', 'horse', 'bear', 'crocodile'].includes(kind) ? .55 : kind === 'bird' ? .18 : .3) * scale, 1);
+    (['deer', 'stag', 'horse', 'unicorn', 'bear', 'crocodile'].includes(kind) ? .55 : kind === 'bird' ? .18 : .3) * scale, 1);
   const phaseSeed = (seed % 997) * .071;
   if (kind === 'fox') fox(r, P, scale, t, phaseSeed, resting, motion);
   else if (kind === 'rabbit') rabbit(r, P, scale, t, phaseSeed, motion);
   else if (kind === 'bird') bird(r, P, scale, t, phaseSeed, motion);
   else if (kind === 'spirit') spirit(r, P, scale, t, phaseSeed);
   else if (kind === 'horse') horse(r, P, scale, t, seed, motion);
+  else if (kind === 'unicorn') horse(r, P, scale, t, seed, motion, true);
   else if (kind === 'wolf') wolf(r, P, scale, t, phaseSeed, motion);
   else if (kind === 'bear') bear(r, P, scale, t, phaseSeed, motion);
   else if (kind === 'boar') boar(r, P, scale, t, phaseSeed, motion);

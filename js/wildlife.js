@@ -1,5 +1,5 @@
-import { pathAt, riverAt } from './world.js?v=4';
-import { SPECIES, REACTIONS } from './bestiary.js?v=4';
+import { pathAt, riverAt } from './world.js?v=5';
+import { SPECIES, REACTIONS } from './bestiary.js?v=5';
 
 const TAU = Math.PI * 2;
 const QUARTER = Math.PI / 2;
@@ -11,6 +11,7 @@ const TYPES = {
   bird: { along: 2.8, across: 1.6, move: 2.65, rest: 2, stride: .3, action: 'flutter' },
   spirit: { along: 2.35, across: 1.65, move: 4.5, rest: .1, stride: 1, action: 'drift' },
   horse: { along: 3.2, across: 1.4, move: 4.4, rest: 3.5, stride: 1.3, action: 'walk' },
+  unicorn: { along: 2.6, across: 1.2, move: 5.6, rest: 4.8, stride: 1.3, action: 'walk' },
   wolf: { along: 2.8, across: 1.25, move: 3.7, rest: 2.4, stride: .9, action: 'trot' },
   bear: { along: 2.25, across: 1, move: 6.7, rest: 4.4, stride: 1.1, action: 'amble' },
   boar: { along: 2.1, across: 1.1, move: 4.5, rest: 3.2, stride: .65, action: 'trot' },
