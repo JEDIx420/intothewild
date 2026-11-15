@@ -24,6 +24,22 @@ button:disabled { cursor: default; opacity: .45; }
 button:focus-visible, a:focus-visible { outline: 2px solid #758b62; outline-offset: 5px; }
 button svg { display: block; width: 20px; height: 20px; flex: 0 0 20px; }
 a { color: var(--leaf); text-underline-offset: 3px; }
+.journey-support {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  color: var(--leaf);
+  background: var(--paper);
+  font-size: 12px;
+  text-decoration: none;
+  align-self: center;
+}
+.journey-support:hover { background: var(--leaf-light); }
+.journey-support:focus-visible { outline: 2px solid var(--leaf); outline-offset: 3px; }
 ::selection { background: #dde6ce; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
