@@ -143,6 +143,7 @@ test('rapid activity changes update the destination without restarting recovery 
   setActivity(state, 'snack');
   advance(state, REST_TIMING.snack.enter + 1);
   setActivity(state, 'sleep');
+  setActivity(state, 'walking');
   advance(state, .4);
   const phaseTime = state.rest.time, fromTime = state.rest.fromTime, clock = state.time;
   for (const requested of ['walking', 'sleep', 'snack', 'walking', 'paused']) {
@@ -152,11 +153,11 @@ test('rapid activity changes update the destination without restarting recovery 
     assert.equal(state.rest.fromTime, fromTime);
     assert.equal(state.rest.nextMode, requested);
   }
-  advance(state, REST_TIMING.snack.exit - .4 + 15);
+  advance(state, REST_TIMING.sleep.exit - .4 + 15);
   assert.equal(state.mode, 'paused');
   assert.equal(state.rest, null);
   assert.equal(state.distance, 0);
-  close(state.time, clock + (REST_TIMING.snack.exit - .4 + 15) * .08);
+  close(state.time, clock + (REST_TIMING.sleep.exit - .4 + 15) * .08);
 });
 
 test('save and resume retain a journey without offline progression', () => {

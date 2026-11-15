@@ -1,5 +1,5 @@
-import { createJourney, stepJourney, setActivity, environment, serializeJourney, restoreJourney, trailProfileAt } from './world.js?v=6';
-import { ForestScene } from './scene.js?v=6';
+import { createJourney, stepJourney, setActivity, environment, serializeJourney, restoreJourney, trailProfileAt } from './world.js?v=7';
+import { ForestScene } from './scene.js?v=7';
 import { ForestAudio } from './audio.js?v=6';
 import { SPECIES } from './bestiary.js?v=6';
 
@@ -198,7 +198,7 @@ function renderUI() {
         : 'Packing everything away. No need to hurry.'
       : rest?.phase === 'enter' ? rest.kind === 'snack'
         ? 'A little stretch. A place to sit. Something from the backpack.'
-        : 'Unrolling a little bed beneath the trees.'
+        : rest.fromSnack ? 'Tidying the snack and settling in for the night.' : 'Unrolling a little bed beneath the trees.'
       : state.mode === 'snack' ? 'A bite of bread. A warm cup. Stay as long as you like.'
       : state.mode === 'sleep' ? 'Rest easy. The trail will be here in the morning.'
       : state.mode === 'walking' ? env.weather === 'rain' ? 'Rain on leaves, and a path that keeps going.'

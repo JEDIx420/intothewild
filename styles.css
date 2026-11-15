@@ -36,7 +36,10 @@ a { color: var(--leaf); text-underline-offset: 3px; }
   background: var(--paper);
   font-size: 12px;
   text-decoration: none;
-  align-self: center;
+  position: absolute;
+  top: 0;
+  left: 0;
+  white-space: nowrap;
 }
 .journey-support:hover { background: var(--leaf-light); }
 .journey-support:focus-visible { outline: 2px solid var(--leaf); outline-offset: 3px; }
@@ -53,7 +56,7 @@ a { color: var(--leaf); text-underline-offset: 3px; }
   flex-direction: column;
   align-items: center;
 }
-.masthead { width: 100%; position: relative; text-align: center; flex-shrink: 0; padding: 0 80px 6px; }
+.masthead { width: 100%; position: relative; text-align: center; flex-shrink: 0; padding: 0 142px 6px; }
 .masthead-tools { position: absolute; display: flex; gap: 4px; right: -2px; top: 0; }
 .icon-button { width: 40px; height: 40px; padding: 10px; display: inline-flex; align-items: center; justify-content: center; background: none; border: 0; border-radius: 50%; color: var(--muted); transition: background .18s ease, color .18s ease; }
 .icon-button:hover { background: #eeeee7; color: var(--ink); }
@@ -141,8 +144,8 @@ dialog::backdrop { background: #efeee7c9; backdrop-filter: blur(5px); -webkit-ba
 }
 @media (max-width: 600px) {
   .journey { padding: max(14px, env(safe-area-inset-top)) 10px max(14px, env(safe-area-inset-bottom)); min-height: 540px; }
-  .masthead { padding: 18px 30px 5px; }
-  .masthead-tools { right: 0; top: -8px; gap: 0; }
+  .masthead { padding: 43px 30px 5px; }
+  .masthead-tools { right: 0; top: 0; gap: 0; }
   .icon-button { width: 37px; height: 37px; padding: 9px; }
   .eyebrow { font-size: 7px; letter-spacing: .16em; margin-bottom: 5px; }
   h1 { font-size: clamp(32px, 9vw, 40px); }

@@ -1,8 +1,8 @@
 import { Raster, rgb, hash, lerp, clamp, SIN, COS, R2 } from './pixel.js?v=6';
-import { pathAt, trailProfileAt, biomeAt, riverAt, waterAt, environment, TrailWorld } from './world.js?v=6';
+import { pathAt, trailProfileAt, biomeAt, riverAt, waterAt, environment, TrailWorld } from './world.js?v=7';
 import { LandscapeTerrain } from './landscape.js?v=6';
-import { drawTraveller, drawCreature } from './actors.js?v=6';
-import { sampleTraveller } from './traveller.js?v=6';
+import { drawCreature } from './actors.js?v=6';
+import { drawTraveller, sampleTraveller } from './traveller.js?v=7';
 import { WildlifeDirector } from './wildlife.js?v=6';
 import { SPECIES } from './bestiary.js?v=6';
 import { makeTreeSprite, drawGroundPlant } from './vegetation.js?v=6';

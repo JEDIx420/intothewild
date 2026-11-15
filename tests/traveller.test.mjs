@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createJourney, setActivity, stepJourney, serializeJourney, restoreJourney } from '../js/world.js';
-import { sampleTraveller, drawTraveller, REST_TIMING } from '../js/traveller.js';
+import { sampleTraveller, drawTraveller, REST_TIMING, restEntryDuration } from '../js/traveller.js';
 import { Raster, rgb } from '../js/pixel.js';
 
 const sample = (state, extra = {}) => sampleTraveller({ ...state, time: state.elapsed, ...extra });
@@ -51,6 +51,36 @@ test('joints and props move continuously across preparation, idle and recovery s
     // standing/seated swap, a prop teleport, or the former sideways jump.
     assert.ok(largestStep < .15, `${kind} moved ${largestStep} units in one frame`);
     assert.equal(state.mode, 'walking');
+  }
+});
+
+test('sleep starts at the current snack pose and a seated traveller stays low', () => {
+  for (const reducedMotion of [false, true]) for (const at of [.2, 2.5, 6]) {
+    const state = createJourney();
+    const extra = { reducedMotion, grade: .3 };
+    setActivity(state, 'snack');
+    advance(state, at);
+    let previous = sample(state, extra);
+    setActivity(state, 'sleep');
+    assert.equal(state.mode, 'sleep');
+    assert.equal(state.rest.phase, 'enter');
+    assert.ok(difference(previous, sample(state, extra)) < 1e-10);
+    const duration = restEntryDuration(state.rest);
+    for (let i = 0; i < Math.round(duration * 60); i++) {
+      stepJourney(state, 1 / 60);
+      const pose = sample(state, extra);
+      assert.ok(difference(previous, pose) < .15);
+      if (at >= 2.5) assert.ok(pose.hip[2] < .6, 'the traveller stood up during the switch');
+      previous = pose;
+      if (i === 45) {
+        const restored = restoreJourney(serializeJourney(state));
+        assert.ok(difference(pose, sample(restored, extra)) < 1e-10, 'reloading changes the switch pose');
+        setActivity(restored, 'walking');
+        assert.ok(difference(pose, sample(restored, extra)) < 1e-10, 'cancelling the switch changes the pose');
+      }
+    }
+    assert.equal(state.rest.phase, 'idle');
+    assert.equal(previous.cover, 1);
   }
 });
 

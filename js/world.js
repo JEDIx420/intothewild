@@ -1,6 +1,6 @@
 // Pure journey rules and deterministic scenery. No DOM, timers or network state.
 import { SPECIES } from './bestiary.js?v=6';
-import { REST_TIMING } from './traveller.js?v=6';
+import { REST_TIMING, restEntryDuration } from './traveller.js?v=7';
 const DEFAULT_SEED = 0x1d70a11d;
 const TAU = Math.PI * 2;
 const HOURS_PER_SECOND = 24 / 300;
@@ -292,6 +292,14 @@ export function setActivity(state, mode) {
   }
   if (state.mode === mode) return state;
   sleepSessions.delete(state);
+  if (state.rest?.kind === 'snack' && mode === 'sleep') {
+    const fromSnack = state.rest;
+    state.mode = 'sleep';
+    state.modeTime = 0;
+    state.rest = { kind: 'sleep', phase: 'enter', time: 0, wasWalking: false,
+      entryDistance: state.distance, entryElapsed: state.elapsed, entryModeTime: 0, fromSnack };
+    return state;
+  }
   if (state.rest) {
     const rest = state.rest;
     rest.fromPhase = rest.phase;
@@ -321,7 +329,7 @@ export function stepJourney(state, dt) {
   while (remaining > 1e-10) {
     const rest = state.rest;
     const asleep = rest?.kind === 'sleep' && rest.phase === 'idle';
-    const duration = rest?.phase === 'enter' ? REST_TIMING[rest.kind].enter
+    const duration = rest?.phase === 'enter' ? restEntryDuration(rest)
       : rest?.phase === 'exit' ? REST_TIMING[rest.kind].exit : asleep ? SLEEP_SECONDS : Infinity;
     const delta = Math.min(remaining, Math.max(0, duration - (rest?.time || 0)));
     state.elapsed += delta;
@@ -593,8 +601,12 @@ function cleanSeen(value) {
 function cleanRest(raw, state) {
   if (!raw || typeof raw !== 'object' || !REST_TIMING[raw.kind] || raw.kind !== state.mode
     || !['enter', 'idle', 'exit'].includes(raw.phase)) return null;
-  const phaseLimit = raw.phase === 'idle' ? raw.kind === 'sleep' ? SLEEP_SECONDS : 1e10
-    : REST_TIMING[raw.kind][raw.phase];
+  const source = raw.kind === 'sleep' && raw.fromSnack?.kind === 'snack'
+    && ['enter', 'idle'].includes(raw.fromSnack.phase)
+    ? cleanRest(raw.fromSnack, { ...state, mode: 'snack' }) : null;
+  const entryDuration = restEntryDuration({ kind: raw.kind, fromSnack: source });
+  const phaseLimit = raw.phase === 'enter' ? entryDuration
+    : raw.phase === 'exit' ? REST_TIMING[raw.kind].exit : raw.kind === 'sleep' ? SLEEP_SECONDS : 1e10;
   const rest = {
     kind: raw.kind, phase: raw.phase, time: clamp(finite(raw.time), 0, phaseLimit),
     wasWalking: raw.wasWalking === true,
@@ -602,9 +614,10 @@ function cleanRest(raw, state) {
     entryElapsed: clamp(finite(raw.entryElapsed, state.elapsed), 0, state.elapsed),
     entryModeTime: clamp(finite(raw.entryModeTime), 0, 1e10),
   };
+  if (source) rest.fromSnack = source;
   if (rest.phase === 'exit') {
     rest.fromPhase = raw.fromPhase === 'enter' ? 'enter' : 'idle';
-    const limit = rest.fromPhase === 'enter' ? REST_TIMING[rest.kind].enter
+    const limit = rest.fromPhase === 'enter' ? entryDuration
       : rest.kind === 'sleep' ? SLEEP_SECONDS : 1e10;
     rest.fromTime = clamp(finite(raw.fromTime), 0, limit);
     rest.fromElapsed = clamp(finite(raw.fromElapsed, state.elapsed), 0, state.elapsed);

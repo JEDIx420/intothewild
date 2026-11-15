@@ -1,8 +1,10 @@
 /* Small, continuous camp animations. Poses are local coordinates, in metres. */
 export const REST_TIMING = Object.freeze({
   snack: Object.freeze({ enter: 4.4, exit: 2.4 }),
-  sleep: Object.freeze({ enter: 4.8, exit: 3 }),
+  sleep: Object.freeze({ enter: 4.8, fromSnack: 3.2, exit: 3 }),
 });
+
+export const restEntryDuration = rest => rest.fromSnack ? REST_TIMING.sleep.fromSnack : REST_TIMING[rest.kind].enter;
 
 const C = {
   coat: [172, 91, 49], coatLight: [199, 117, 61], coatDark: [123, 65, 43],
@@ -21,10 +23,6 @@ const mix = (a, b, t) => a + (b - a) * t;
 const pointMix = (a, b, t) => a.map((v, i) => mix(v, b[i], t));
 const offset = (p, f = 0, s = 0, u = 0) => [p[0] + f, p[1] + s, p[2] + u];
 const copy = pose => Object.fromEntries(Object.entries(pose).map(([key, value]) => [key, Array.isArray(value) ? [...value] : value]));
-function blend(a, b, t) {
-  return Object.fromEntries(Object.keys(a).map(key => [key, Array.isArray(a[key])
-    ? pointMix(a[key], b[key], t) : mix(a[key], b[key], t)]));
-}
 function changed(pose, patch) {
   const result = { ...copy(pose), ...patch };
   if (!patch.hat && result.hatWorn === 1) {
@@ -38,7 +36,23 @@ function clip(frames, time) {
   for (let i = 1; i < frames.length; i++) {
     if (time <= frames[i][0]) {
       const [a, pa] = frames[i - 1], [b, pb] = frames[i];
-      return blend(pa, pb, ease((time - a) / (b - a)));
+      // Carry momentum through intermediate poses and ease into reversals.
+      const previous = frames[i - 2], next = frames[i + 1], span = b - a;
+      const t = (time - a) / span, u = 1 - t;
+      const tangent = (left, right) => left * right > 0 ? 2 * left * right / (left + right) : 0;
+      const interpolate = (start, end, before, after) => {
+        const speed = (end - start) / span;
+        const incoming = previous ? tangent((start - before) / (a - previous[0]), speed) : 0;
+        const outgoing = next ? tangent(speed, (after - end) / (next[0] - b)) : 0;
+        return clamp(mix(start, end, ease(t)) + span * t * u * (u * incoming - t * outgoing),
+          Math.min(start, end), Math.max(start, end));
+      };
+      return Object.fromEntries(Object.entries(pa).map(([key, start]) => {
+        const end = pb[key], before = previous?.[1][key], after = next?.[1][key];
+        return [key, Array.isArray(start)
+          ? start.map((value, j) => interpolate(value, end[j], before?.[j], after?.[j]))
+          : interpolate(start, end, before, after)];
+      }));
     }
   }
   return copy(frames[frames.length - 1][1]);
@@ -149,7 +163,7 @@ function entryFrames(p, rest) {
       lhand: [.34, -.3, 1.07], lelbow: [.1, -.37, .87],
       rhand: [.35, .29, .7], relbow: [.13, .35, .84],
     });
-    return [[0, start], [.42, ready], [.88, stretch], [1.12, stretch], [1.5, straps], [2.08, crouch],
+    return [[0, start], [.42, ready], [.96, stretch], [1.5, straps], [2.08, crouch],
       [2.65, changed(reach, { cloth: 1 })], [3.18, open], [3.72, food],
       [4.4, snackIdle({ ...frozen, time: finite(rest.entryElapsed, p.time) + 4.4 }, 0)]];
   }
@@ -163,16 +177,24 @@ function entryFrames(p, rest) {
     relbow: [.28, .34, .62], rhand: [.91, .21, .2],
     roll: [1.05, 0, .09], rollAmount: .22, bag: 1, packOpen: 0,
   });
-  const curl = changed(sleepIdle({ ...frozen, time: finite(rest.entryElapsed, p.time) + 4.8 }), {
+  const duration = restEntryDuration(rest);
+  const asleep = sleepIdle({ ...frozen, time: frozen.time + duration });
+  const curl = changed(asleep, {
     hip: [.19, 0, .39], shoulder: [-.27, 0, .62], head: [-.5, 0, .89], headTilt: -.67,
     lelbow: [-.37, -.31, .47], lhand: [-.53, -.11, .74],
-    relbow: [-.1, .32, .4], rhand: [.04, .3, .3],
+    relbow: [-.1, .32, .4], rhand: [-.17, .35, .16],
     lknee: [.62, -.22, .4], rknee: [.63, .2, .36],
     cover: .2, hat: [-.16, .57, .25], hatTilt: -.25,
   });
-  return [[0, start], [.42, ready], [.88, stretch], [1.12, stretch], [1.5, straps], [2.08, crouch],
-    [2.7, unpack], [3.48, unroll], [4.1, curl],
-    [4.8, sleepIdle({ ...frozen, time: finite(rest.entryElapsed, p.time) + 4.8 })]];
+  if (rest.fromSnack) {
+    const current = activePose(frozen, rest.fromSnack);
+    const stow = changed(current.restAmount < .6 ? crouch : reach, {
+      cloth: current.cloth * .45, packOpen: .55,
+    });
+    return [[0, current], [.72, stow], [1.32, unpack], [1.95, unroll], [2.54, curl], [duration, asleep]];
+  }
+  return [[0, start], [.42, ready], [.96, stretch], [1.5, straps], [2.08, crouch],
+    [2.7, unpack], [3.48, unroll], [4.1, curl], [duration, asleep]];
 }
 
 function activePose(p, rest, phase = rest.phase, time = rest.time) {
@@ -180,7 +202,7 @@ function activePose(p, rest, phase = rest.phase, time = rest.time) {
   return rest.kind === 'sleep' ? sleepIdle(p) : snackIdle(p, finite(time));
 }
 function exitPose(p, rest) {
-  const elapsed = finite(rest.fromElapsed, finite(rest.entryElapsed) + REST_TIMING[rest.kind].enter + finite(rest.fromTime));
+  const elapsed = finite(rest.fromElapsed, finite(rest.entryElapsed) + restEntryDuration(rest) + finite(rest.fromTime));
   const start = activePose({ ...p, time: elapsed }, rest, rest.fromPhase || 'idle', finite(rest.fromTime));
   const end = standing(p, false);
   const duration = REST_TIMING[rest.kind].exit, time = finite(rest.time);
@@ -304,10 +326,10 @@ export function drawTraveller(r, options = {}) {
   if (pose.cover > .001) {
     for (let i = 0; i <= 6; i++) {
       const f = -.39 + i * .2, rise = .19 + Math.sin((i + 1) / 8 * Math.PI) * .1;
-      oval([f, .08 * (1 - pose.cover), .08 + rise * pose.cover], .25, .31, .075 + .17 * pose.cover, C.bagLight);
+      oval([f, .08 * (1 - pose.cover), .08 + rise * pose.cover], .25, .31 * pose.cover, .245 * pose.cover, C.bagLight);
     }
-    bone([-.36, -.3, .14 + .15 * pose.cover], [-.36, .3, .14 + .15 * pose.cover], .045, .045, C.bag);
-    bone([.82, -.28, .13 + .06 * pose.cover], [.82, .28, .13 + .06 * pose.cover], .027, .027, C.bag);
+    bone([-.36, -.3 * pose.cover, .29 * pose.cover], [-.36, .3 * pose.cover, .29 * pose.cover], .045 * pose.cover, .045 * pose.cover, C.bag);
+    bone([.82, -.28 * pose.cover, .19 * pose.cover], [.82, .28 * pose.cover, .19 * pose.cover], .027 * pose.cover, .027 * pose.cover, C.bag);
   }
   oval(pose.hat, .345, .305, .045, C.hatRim);
   oval(offset(pose.hat, -.025, 0, .08), .22, .21, .12, C.hat);
