@@ -7,7 +7,7 @@
   <meta name="description" content="A little journey, without an end. Wander a changing wilderness, meet its curious inhabitants, and stop whenever you please.">
   <title>Into the Wild — a little journey</title>
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
-  <link rel="stylesheet" href="./styles.css?v=8">
+  <link rel="stylesheet" href="./styles.css?v=9">
 </head>
 <body>
   <main class="journey" aria-label="Into the Wild">
@@ -36,13 +36,13 @@
       </div>
       <div class="canvas-wrap">
         <canvas id="c" width="960" height="460" aria-label="An endless pixel-art wilderness. Touch or click an animal to see its reaction. Use the Walk, Snack and Sleep buttons below to guide your traveller." aria-describedby="interaction-hint">Your browser needs canvas support to show the wilderness.</canvas>
-        <div id="wildlife-targets" aria-label="Nearby wildlife" role="group"></div>
+        <div id="wildlife-targets" aria-label="Nearby wildlife and neighbours" role="group"></div>
         <div id="interaction-ripple" aria-hidden="true"></div>
         <div id="sleep-overlay" aria-hidden="true"></div>
       </div>
       <div class="scene-foot">
         <span id="distance-label">The first few steps</span>
-        <span id="interaction-hint">Touch the wildlife. See what happens.</span>
+        <span id="interaction-hint">Touch wildlife or neighbours. See what happens.</span>
       </div>
     </section>
 
@@ -78,7 +78,7 @@
     </section>
     <section class="journal-section how-to" aria-labelledby="how-to-heading">
       <h3 id="how-to-heading">A slower kind of adventure</h3>
-      <p>Follow the trail, stop for a snack, or sleep beneath the sky. Touch or click the wildlife and wait for its response: curious, cautious, playful, or startled. Give it a moment, then try again. You can also use Tab and Enter to interact. The wilderness changes with the hour and season, and its inhabitants keep living when you stop.</p>
+      <p>Follow the trail, stop for a snack, or sleep beneath the sky. Touch or click wildlife and the occasional woodland neighbour: animals may flee or draw closer, while people may wave or quietly carry on with their work. Give them a moment, then try again. You can also use Tab and Enter to interact. The wilderness changes with the hour and season, and its inhabitants keep living when you stop.</p>
       <dl class="key-guide"><div><dt><kbd>Space</kbd></dt><dd>Walk or pause</dd></div><div><dt><kbd>E</kbd></dt><dd>Have a snack</dd></div><div><dt><kbd>R</kbd></dt><dd>Sleep</dd></div><div><dt><kbd>M</kbd></dt><dd>Sound on or off</dd></div><div><dt><kbd>J</kbd></dt><dd>Open field notes</dd></div></dl>
     </section>
     <section class="journal-section music-section" aria-labelledby="music-heading">
@@ -89,6 +89,6 @@
     </section>
     <footer class="journal-credits"><p>Made in the spirit of <a href="https://github.com/amirmushichge/pixel-plays" target="_blank" rel="noopener noreferrer">Pixel Plays</a> by Amir Mushich. Renderer code adapted under the MIT licence.</p><p>Music by syncopika, MouthlessGames and The Cynic Project. <a href="./docs/music-sources.md" target="_blank" rel="noopener noreferrer">Track credits and licences</a>. Nature ambience is generated in your browser.</p></footer>
   </dialog>
-  <script type="module" src="./js/main.js?v=7"></script>
+  <script type="module" src="./js/main.js?v=9"></script>
 </body>
 </html>

@@ -1,6 +1,7 @@
 // Pure journey rules and deterministic scenery. No DOM, timers or network state.
-import { SPECIES } from './bestiary.js?v=6';
-import { REST_TIMING, restEntryDuration } from './traveller.js?v=7';
+import { SPECIES } from './bestiary.js?v=9';
+import { REST_TIMING, restEntryDuration } from './traveller.js?v=9';
+import { HOMES_BY_BIOME, WORK_BY_HOME } from './homesteads.js?v=9';
 const DEFAULT_SEED = 0x1d70a11d;
 const TAU = Math.PI * 2;
 const HOURS_PER_SECOND = 24 / 300;
@@ -403,6 +404,42 @@ const LAND_FAUNA = {
   enchanted: [['butterfly', 28], ['deer', 24], ['owl', 12], ['fox', 12], ['squirrel', 24]],
 };
 const ENCOUNTER_SPACING = 48;
+const HOMESTEAD_SPACING = 170;
+const homesteadCache = new Map();
+
+// A clearing is a rare destination in its own right. Candidate locations are
+// global trail cells, so a cottage never jumps or re-rolls at chunk borders.
+function homesteadAt(cell, seed) {
+  const key = `${seed}:${cell}`;
+  if (homesteadCache.has(key)) return homesteadCache.get(key);
+  let home = null;
+  const s = cell * HOMESTEAD_SPACING + 54 + randomAt(seed, cell, 1101) * 62;
+  if (cell >= 0 && randomAt(seed, cell, 1102) < .78) {
+    const biome = biomeAt(s, seed), choices = HOMES_BY_BIOME[biome] || [];
+    const side = (randomAt(seed, cell, 1103) < .5 ? -1 : 1) * (8.5 + randomAt(seed, cell, 1104) * 3.5);
+    const x = pathAt(s, seed) + side;
+    const ground = terrainAt(s, x, seed);
+    const dry = [-4, 0, 4].every(ds => !riverAt(s + ds, seed) && !waterAt(s + ds, pathAt(s + ds, seed) + side, seed));
+    const grade = Math.max(...[-3.5, 3.5].map(ds => Math.abs(terrainAt(s + ds, pathAt(s + ds, seed) + side, seed) - ground)));
+    const crossGrade = Math.max(...[-2.8, 2.8].map(dx => Math.abs(terrainAt(s, x + dx, seed) - ground)));
+    if (choices.length && dry && grade < 2.8 && crossGrade < 2.5) {
+      const variant = choices[Math.floor(randomAt(seed, cell, 1105) * choices.length)];
+      home = { s, side, variant, cell, biome };
+    }
+  }
+  if (homesteadCache.size > 70) homesteadCache.delete(homesteadCache.keys().next().value);
+  homesteadCache.set(key, home);
+  return home;
+}
+
+function inHomesteadClearing(s, side, seed) {
+  const cell = Math.floor(s / HOMESTEAD_SPACING);
+  for (let nearby = cell - 1; nearby <= cell + 1; nearby++) {
+    const home = homesteadAt(nearby, seed);
+    if (home && Math.abs(s - home.s) < 5.8 && Math.abs(side - home.side) < 6.2) return true;
+  }
+  return false;
+}
 
 function encounterAt(cell, seed) {
   const s = cell * ENCOUNTER_SPACING + 13 + randomAt(seed, cell, 701) * 14;
@@ -449,6 +486,7 @@ function makeChunk(index, seed) {
   const animal = (variant, s, side, extra = {}) => add('animal', variant, s, side,
     (SPECIES[variant]?.scale || 1) * (.9 + random() * .18), extra);
   const plant = (s, side, far = false) => {
+    if (inHomesteadClearing(s, side, seed)) return;
     const biome = biomeAt(s, seed), x = pathAt(s, seed) + side;
     const water = waterAt(s, x, seed);
     if (water) {
@@ -484,6 +522,7 @@ function makeChunk(index, seed) {
   for (let slot = 0; slot < 17; slot++) {
     const s = start + random() * CHUNK_LENGTH;
     const side = (slot % 2 ? -1 : 1) * (1.55 + random() * (slot < 12 ? 9 : 27));
+    if (inHomesteadClearing(s, side, seed)) continue;
     const biome = biomeAt(s, seed), water = waterAt(s, pathAt(s, seed) + side, seed);
     if (water) {
       if (water.kind === 'swamp') add('lily', 'water', s, side, .8 + random() * .5, { water });
@@ -496,6 +535,22 @@ function makeChunk(index, seed) {
         ? (roll < .35 ? 'fern' : roll < .68 ? 'grass' : roll < .83 ? 'mushroom' : roll < .94 ? 'bush' : 'log')
         : (roll < .55 ? 'grass' : roll < .9 ? 'flowers' : 'bush');
     add(kind, kind === 'flowers' ? choose(['white', 'blue', 'gold', 'pink']) : kind === 'mushroom' && biome === 'enchanted' ? 'glowing' : 'wild', s, side, .65 + random() * .75);
+  }
+
+  for (let cell = Math.floor(start / HOMESTEAD_SPACING) - 1; cell <= Math.floor((start + CHUNK_LENGTH) / HOMESTEAD_SPACING); cell++) {
+    const home = homesteadAt(cell, seed);
+    if (!home || home.s < start || home.s >= start + CHUNK_LENGTH) continue;
+    const homesteadId = `home:${cell}`;
+    const building = add('home', home.variant, home.s, home.side, .9 + randomAt(seed, cell, 1111) * .14,
+      { homesteadId, biome: home.biome });
+    const possibleJobs = WORK_BY_HOME[home.variant];
+    const first = Math.floor(randomAt(seed, cell, 1112) * possibleJobs.length);
+    const count = randomAt(seed, cell, 1113) < .34 ? 2 : 1;
+    for (let i = 0; i < count; i++) {
+      const job = possibleJobs[(first + i + (i ? 1 : 0)) % possibleJobs.length];
+      add('resident', job, home.s, home.side, .9 + randomAt(seed, cell, 1114 + i) * .15,
+        { homesteadId, homeVariant: home.variant, homeSeed: building.seed, member: i });
+    }
   }
 
   // Global encounter slots cross chunk boundaries cleanly. Empty slots leave

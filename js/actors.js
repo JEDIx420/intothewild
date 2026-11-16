@@ -50,7 +50,7 @@ function bone(r, a, b, radius, endRadius, color, mode = 'solid') {
   r.capsule(a, b, radius, endRadius, color, mode);
 }
 
-export { drawTraveller } from './traveller.js?v=6';
+export { drawTraveller } from './traveller.js?v=9';
 
 function walkingLegs(r, P, scale, motion, hips, width, height, color, lower, hoof, stride) {
   const moving = Math.min(1, motion.speed / .55);

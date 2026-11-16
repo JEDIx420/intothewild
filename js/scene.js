@@ -1,11 +1,12 @@
-import { Raster, rgb, hash, lerp, clamp, SIN, COS, R2 } from './pixel.js?v=6';
-import { pathAt, trailProfileAt, biomeAt, riverAt, waterAt, environment, TrailWorld } from './world.js?v=7';
-import { LandscapeTerrain } from './landscape.js?v=6';
-import { drawCreature } from './actors.js?v=6';
-import { drawTraveller, sampleTraveller } from './traveller.js?v=7';
-import { WildlifeDirector } from './wildlife.js?v=6';
-import { SPECIES } from './bestiary.js?v=6';
-import { makeTreeSprite, drawGroundPlant } from './vegetation.js?v=6';
+import { Raster, rgb, hash, lerp, clamp, SIN, COS, R2 } from './pixel.js?v=9';
+import { pathAt, trailProfileAt, biomeAt, riverAt, waterAt, environment, TrailWorld } from './world.js?v=9';
+import { LandscapeTerrain } from './landscape.js?v=9';
+import { drawCreature } from './actors.js?v=9';
+import { drawTraveller, sampleTraveller } from './traveller.js?v=9';
+import { WildlifeDirector } from './wildlife.js?v=9';
+import { SPECIES } from './bestiary.js?v=9';
+import { makeTreeSprite, drawGroundPlant } from './vegetation.js?v=9';
+import { drawHome, drawResident, ResidentDirector, residentName, residentPosition } from './homesteads.js?v=9';
 
 const PAPER = rgb(250, 249, 246);
 export class ForestScene {
@@ -15,7 +16,8 @@ export class ForestScene {
     this.world = new TrailWorld(seed);
     this.terrain = new LandscapeTerrain(seed);
     this.sprites = new Map(); this.active = []; this.visibleAnimals = [];
-    this.wildlife = new WildlifeDirector(seed); this.hitTargets = []; this.lastState = null; this.ripples = [];
+    this.wildlife = new WildlifeDirector(seed); this.residents = new ResidentDirector();
+    this.hitTargets = []; this.lastState = null; this.ripples = []; this.visibleHomes = [];
     this.reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.resize(canvas.clientWidth || 960, canvas.clientHeight || 460);
   }
@@ -106,6 +108,7 @@ export class ForestScene {
   interactWith(id, state = this.lastState) {
     const target = this.hitTargets.find(value => value.id === id);
     if (!target || !state) return null;
+    if (target.entity.kind === 'resident') return this.residents.interact(target.entity, state.elapsed);
     return this.wildlife.interact(target.entity, state.elapsed, this.travellerPosition);
   }
   bridge(river) {
@@ -252,6 +255,7 @@ export class ForestScene {
     r.clear(PAPER); this.terrain.draw(state, env, r);
     this.world.update(state.distance, this.terrain.radius);
     this.wildlife.prune(this.world.entities);
+    this.residents.prune(this.world.entities);
     const active = this.active; active.length = 0;
     for (const e of this.world.entities) {
       const motion = e.kind === 'animal' ? this.wildlife.sample(e, state.elapsed, state.seed) : null;
@@ -260,7 +264,7 @@ export class ForestScene {
       if (Math.abs(relative) > this.terrain.radius) continue;
       const x = motion ? motion.x : pathAt(s, state.seed) + e.side;
       const y = -s;
-      if (e.kind !== 'animal' && e.kind !== 'tree' && e.kind !== 'lily') {
+      if (!['animal', 'tree', 'lily', 'home', 'resident'].includes(e.kind)) {
         const grade = this.terrain.gradeAt(s, x);
         if (grade > .95 && (e.kind !== 'grass' || grade > 1.45 || hash(e.seed, 442) > .2)) continue;
       }
@@ -269,8 +273,9 @@ export class ForestScene {
       const z = aquatic ? (motion.waterLevel ?? wet?.level ?? e.water?.level ?? this.surface(s, x))
         : e.kind === 'lily' && (wet || e.water) ? (wet || e.water).level : this.surface(s, x);
       const point = r.project(x, y, z);
-      const margin = e.kind === 'tree' ? 35 : e.kind === 'animal' ? 30 : 18;
-      const crown = e.kind === 'tree' ? (['aspen', 'cypress', 'spruce', 'birch'].includes(e.variant) ? 8 : 6.5) * r.scale * (e.scale || 1) * .87 + 9 : 35;
+      const margin = e.kind === 'home' ? 90 : e.kind === 'tree' ? 35 : e.kind === 'animal' || e.kind === 'resident' ? 30 : 18;
+      const crown = e.kind === 'tree' ? (['aspen', 'cypress', 'spruce', 'birch'].includes(e.variant) ? 8 : 6.5) * r.scale * (e.scale || 1) * .87 + 9
+        : e.kind === 'home' ? 8 * r.scale : 35;
       if (point.sx < -margin || point.sx > r.width + margin || point.sy < -8 || point.sy > r.height + crown) continue;
       if (e.kind === 'tree') this.treeShadow(e, x, y, z, env);
       if (e.kind === 'rock') r.shadow(x + .1, y, z, .5, .6);
@@ -303,12 +308,39 @@ export class ForestScene {
       const point = r.project(animal.x, animal.y, animal.z + .6 + animal.motion.hop);
       r.cutaways.push({ x: point.sx, y: point.sy, d: point.d, rx: 15 * pixelScale, ry: 15 * pixelScale });
     }
-    this.visibleAnimals.length = 0; this.hitTargets.length = 0;
+    this.visibleAnimals.length = 0; this.visibleHomes.length = 0; this.hitTargets.length = 0;
     for (const { e, x, y, z, motion } of active) {
       if (e.kind === 'tree') {
         const sprite = this.treeSprite(e.variant || 'oak', env.seasonIndex, Math.abs(e.seed | 0) % 16, e.scale || 1);
         const sway = this.reducedMotion ? 0 : (Math.sin(state.elapsed * .85 - x * .17 + y * .11) + .3 * Math.sin(state.elapsed * 1.4 + e.seed)) * 1.2 * pixelScale;
         r.blit(sprite, x, y, z, sway);
+      } else if (e.kind === 'home') {
+        drawHome(r, { x, y, z, seed: e.seed, variant: e.variant,
+          time: state.elapsed, seasonIndex: env.seasonIndex, night: env.night > .4, scale: e.scale });
+        if (Math.abs(e.s - state.distance) < 18) this.visibleHomes.push({ id: e.id, kind: e.variant, distance: e.s - state.distance });
+      } else if (e.kind === 'resident') {
+        const location = residentPosition(e, x, y, z, state.elapsed, (xx, yy) => this.surface(-yy, xx));
+        const point = r.project(location.x, location.y, location.z + 1.2), extent = Math.ceil(2.7 * r.scale + 12);
+        const x0 = Math.max(0, Math.floor(point.sx - extent)), x1 = Math.min(r.width - 1, Math.ceil(point.sx + extent));
+        const y0 = Math.max(0, Math.floor(point.sy - extent - 15)), y1 = Math.min(r.height - 1, Math.ceil(point.sy + extent + 15));
+        const before = [];
+        for (let iy = y0; iy <= y1; iy += 2) for (let ix = x0; ix <= x1; ix += 2) before.push(r.depth[iy * r.width + ix]);
+        const person = drawResident(r, { entity: e, x, y, z, time: state.elapsed,
+          reaction: this.residents.sample(e, state.elapsed),
+          groundAt: (xx, yy) => this.surface(-yy, xx), night: env.night > .4, reducedMotion: this.reducedMotion });
+        const head = r.project(...person.head), samples = [];
+        let k = 0;
+        for (let iy = y0; iy <= y1; iy += 2) for (let ix = x0; ix <= x1; ix += 2) {
+          const index = iy * r.width + ix, depth = r.depth[index];
+          if (depth > before[k] + .00001) samples.push({ index, depth });
+          k++;
+        }
+        const cssX = head.sx / r.width * this.cssWidth, cssY = head.sy / r.height * this.cssHeight;
+        if (samples.length && cssX >= 0 && cssX <= this.cssWidth && cssY >= 0 && cssY <= this.cssHeight) {
+          this.hitTargets.push({ id: e.id, name: residentName(e), cssX, cssY,
+            radius: Math.max(22, 1.55 * r.scale * this.cssWidth / r.width),
+            entity: e, depth: head.d, samples });
+        }
       } else if (e.kind === 'animal') {
         const near = Math.abs(motion.s - state.distance), kind = e.variant || 'deer';
         const species = SPECIES[kind] || { name: kind, height: 1, hitRadius: 1 };
@@ -338,7 +370,9 @@ export class ForestScene {
     this.hitTargets = this.hitTargets.filter(target => target.samples.some(sample => Math.abs(r.depth[sample.index] - sample.depth) < .001));
     this.hitTargets.sort((a, b) => b.depth - a.depth);
     r.applyShadows(); r.shadeEdges(); this.lighting(env); this.particles(state, env); r.present();
-    this.lastStats = { renderMs: performance.now() - started, chunks: this.world.chunks.size, entities: this.world.entities.length, trees: treeCount, sprites: this.sprites.size, visible: active.length };
+    this.lastStats = { renderMs: performance.now() - started, chunks: this.world.chunks.size, entities: this.world.entities.length,
+      trees: treeCount, homes: this.visibleHomes.length, residents: this.hitTargets.filter(target => target.entity.kind === 'resident').length,
+      sprites: this.sprites.size, visible: active.length };
     return env;
   }
 }

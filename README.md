@@ -13,8 +13,8 @@ Walk a winding trail through mixed woodland, lively streams, open meadows, mount
 | Control | Action |
 | --- | --- |
 | Walk / Space / Up arrow | Walk forward or pause |
-| Touch or click an animal | Discover its reaction; give it a moment before trying again |
-| Tab, then Enter | Interact with nearby wildlife using the keyboard |
+| Touch or click an animal or neighbour | Discover its reaction; give it a moment before trying again |
+| Tab, then Enter | Interact with nearby wildlife or residents using the keyboard |
 | Snack / E | Sit and have a snack; press again to stand |
 | Sleep / R | Rest until the next morning; press again to wake early |
 | Speaker / M | Listen or mute |
@@ -33,6 +33,12 @@ Walking resumes after packing up: **2.4 seconds after a snack**, or **3 seconds 
 ![Snack and sleep animations, enlarged here to show the small gestures](docs/camp-animations.gif)
 
 ## A living wilderness
+
+### The little homes along the way
+
+Occasionally, a clearing reveals a **timber cabin, thatched cottage, round-doored hobbit burrow, stone hillside home, stilt hut, or woodland treehouse**. These places are deliberately uncommon, with long stretches of uninhabited countryside between them. They sit naturally against the terrain, with moss, timber, windows glowing after dark, little gardens, stepping stones, firewood, lanterns and chimney smoke. Snow catches on roofs in winter.
+
+One or two tiny neighbours live near each home. Depending on the place, they might tend a fire, play a lute, chop firewood, water flowers, brew tea, fish, read, light lanterns or look at the sky. Their hands and tools move while you walk, snack or rest. Tap or click a neighbour and they may pause to wave—or carry on with their task—with a short observation in the bottom commentary. They are quiet encounters, not quest-givers, and do not interrupt the forward-only journey. They can also be reached through labelled keyboard controls.
 
 There are **25 inhabitants**: foxes, deer, rabbits, robins, squirrels, badgers, boars, wolves, bears, lynx, wild horses, mountain ibex, owls, eagles, otters, ducks, herons, crocodiles, frogs, trout, butterflies, dragonflies, moonlit stags, lantern spirits and forest unicorns. Encounters are spread along the trail with long quiet stretches between them. Larger mammals are less common, horses occasionally appear in small family groups, trout sometimes jump from the streams, and a wetland may have a single basking crocodile. Pools and riverbanks are often unoccupied.
 
