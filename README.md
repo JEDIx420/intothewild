@@ -88,4 +88,8 @@ This is a static site with relative asset paths. Publish `main` from `/ (root)` 
 
 The pixel-rendering foundation is adapted from [Pixel Plays](https://github.com/amirmushichge/pixel-plays) by Amir Mushich under the MIT licence. Its fixed perspective and small, detailed figures inspired this game. Upstream music is not included. The wilderness, journey systems, procedural characters, vegetation, wildlife interactions and interface are created for Into the Wild.
 
-See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for code and music licences. The MIT code licence does not replace the recordings’ individual licences.
+## Licence
+
+The game’s source code is available under the [MIT License](LICENSE). Keep the copyright and licence notices when redistributing it.
+
+The [third-party notices](THIRD_PARTY_NOTICES.md) include the original Pixel Plays MIT licence and copyright notice. The bundled soundtrack is available under each track’s own Creative Commons licence. See the [music credits](docs/music-sources.md) for details.

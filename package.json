@@ -2,6 +2,7 @@
   "name": "into-the-wild",
   "version": "6.0.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "An endless little journey through a living pixel wilderness.",
   "scripts": {
