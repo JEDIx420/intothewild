@@ -50,7 +50,7 @@ function bone(r, a, b, radius, endRadius, color, mode = 'solid') {
   r.capsule(a, b, radius, endRadius, color, mode);
 }
 
-export { drawTraveller } from './traveller.js?v=9';
+export { drawTraveller } from './traveller.js?v=10';
 
 function walkingLegs(r, P, scale, motion, hips, width, height, color, lower, hoof, stride) {
   const moving = Math.min(1, motion.speed / .55);
@@ -464,28 +464,38 @@ function heron(r, P, scale, t, seed, motion) {
 }
 
 function crocodile(r, P, scale, t, seed, motion) {
-  const back = [85, 108, 72], light = [135, 143, 92], dark = [54, 76, 52];
+  const back = [99, 126, 80], light = [162, 161, 99], dark = [55, 81, 54];
   if (motion.graze > 0) {
     const frame = P;
     P = (f, side, up) => frame(f, side, up + Math.max(0, Math.min(1, (f - .4) / 1.1)) * motion.graze * .17);
   }
   const sway = Math.sin(t * (motion.speed > .1 ? 3.1 : .6) + seed) * (.1 + motion.splash * .4);
-  bone(r, P(-.6, 0, .23), P(.38, 0, .28), .25 * scale, .29 * scale, back, 'rough');
+  if (motion.swimming) {
+    // Ripples around the ridged back make a submerged crocodile readable at
+    // small scale, without turning it into a hovering land animal.
+    const ripples = [151, 202, 189];
+    for (let i = 0; i < 10; i++) {
+      const a = i * Math.PI / 5 + t * .15;
+      r.plot(...P(Math.cos(a) * 1.9, Math.sin(a) * .67, .055), ripples);
+    }
+  }
+  bone(r, P(-.6, 0, .24), P(.38, 0, .29), .34 * scale, .37 * scale, back, 'rough');
+  bone(r, P(-.52, 0, .43), P(.31, 0, .47), .20 * scale, .19 * scale, light);
   for (const front of [-.5, .35]) for (const side of [-1, 1]) {
     const step = Math.sin(motion.gait + (front * side > 0 ? Math.PI : 0)) * Math.min(.15, motion.speed * .2);
     bone(r, P(front, side * .18, .22), P(front - .14, side * .42, .12), .075 * scale, .055 * scale, back);
     bone(r, P(front - .14, side * .42, .12), P(front + step, side * .45, .035), .055 * scale, .036 * scale, light);
   }
-  bone(r, P(.42, 0, .28), P(.91, 0, .24), .2 * scale, .18 * scale, back);
+  bone(r, P(.42, 0, .28), P(.91, 0, .24), .28 * scale, .24 * scale, back);
   const gape = motion.gape || 0;
-  bone(r, P(.83, 0, .22), P(1.48, 0, .17), .13 * scale, .105 * scale, light);
-  bone(r, P(.83, 0, .3), P(1.48, 0, .26 + gape * .43), .13 * scale, .1 * scale, back);
+  bone(r, P(.83, 0, .22), P(1.56, 0, .17), .19 * scale, .14 * scale, light);
+  bone(r, P(.83, 0, .3), P(1.56, 0, .29 + gape * .45), .18 * scale, .14 * scale, back);
   for (const side of [-1, 1]) {
-    ball(r, P(.81, side * .14, .38), .065 * scale, back);
-    ball(r, P(.84, side * .18, .41), .028 * scale, [207, 174, 77]);
+    ball(r, P(.81, side * .22, .42), .092 * scale, dark);
+    ball(r, P(.86, side * .26, .46), .042 * scale, [235, 195, 81]);
     for (let k = 0; k < 4; k++) ball(r, P(.98 + k * .12, side * .09, .22 + gape * (.1 + k * .065)), .019 * scale, C.cream);
   }
-  for (let n = 0; n < 7; n++) for (const side of [-1, 1]) ball(r, P(-.65 + n * .18, side * .11, .46 - Math.abs(n - 3) * .012), .065 * scale, dark, 'rough');
+  for (let n = 0; n < 7; n++) for (const side of [-1, 1]) ball(r, P(-.65 + n * .18, side * .19, .53 - Math.abs(n - 3) * .012), .085 * scale, dark, 'rough');
   let last = [-.72, 0, .22];
   for (let n = 0; n < 5; n++) {
     const next = [-1.06 - n * .32, sway * (n + 1) * .6, .18 - n * .027];
@@ -576,7 +586,7 @@ export function drawCreature(r, options = {}) {
       return point;
     };
   }
-  if (!['fish', 'duck', 'otter', 'butterfly', 'dragonfly', 'spirit'].includes(kind)) r.shadow(x, y, z,
+  if (!['fish', 'duck', 'otter', 'butterfly', 'dragonfly', 'spirit'].includes(kind) && !(kind === 'crocodile' && motion.swimming)) r.shadow(x, y, z,
     (['deer', 'stag', 'horse', 'unicorn', 'bear', 'crocodile'].includes(kind) ? .55 : kind === 'bird' ? .18 : .3) * scale, 1);
   const phaseSeed = (seed % 997) * .071;
   if (kind === 'fox') fox(r, P, scale, t, phaseSeed, resting, motion);
@@ -601,6 +611,6 @@ export function drawCreature(r, options = {}) {
   else if (kind === 'fish') fish(r, P, scale, t, phaseSeed, motion);
   else if (kind === 'butterfly' || kind === 'dragonfly') insect(r, P, scale, t, seed, kind === 'dragonfly');
   else deer(r, P, scale, t, seed, kind === 'stag', resting, motion);
-  if (['fish', 'duck', 'otter'].includes(kind) || motion.splash > .1) waterTrace(r, x, y, z, scale, t, phaseSeed,
+  if (['fish', 'duck', 'otter'].includes(kind) || kind === 'crocodile' && motion.swimming || motion.splash > .1) waterTrace(r, x, y, z, scale, t, phaseSeed,
     Math.max(motion.splash, ['duck', 'otter'].includes(kind) ? Math.min(.35, motion.speed * .3) : 0));
 }

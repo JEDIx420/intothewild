@@ -44,6 +44,8 @@ There are **25 inhabitants**: foxes, deer, rabbits, robins, squirrels, badgers, 
 
 A forest unicorn, moonlit stag or lantern spirit is a rare surprise. These solitary magical visitors replace an ordinary encounter and are spaced well apart; they are never guaranteed in the opening. Unicorns have a pale coat, a softly lit horn and a few intermittent glints, with gentle reactions when approached.
 
+**Crocodiles** occasionally sun themselves on open banks of swamp ponds and river crossings. They have broad, scuted backs, and their autonomous routine alternates between long basking rests, slipping into the shallows and floating slowly on the water with faint ripples. Tapping one may make it open its jaws, send a splash across the surface, or abruptly slide into the water; it never chases or attacks the traveller. The path-facing banks are kept open enough to see them without filling every wetland with predators.
+
 Touches draw from **110 species-specific responses**, with different movement and poses: approaching, startling, bounding away, rearing, grazing, listening, opening jaws, diving, splashing and more. Reactions begin at the animal’s current position and blend back into its usual activity. Animals keep moving while you pause or take a snack. The field notes remember the species you discover.
 
 **Twelve tree silhouettes** mix with grass, ferns, flowering patches, shrubs, reeds, lilies, mushrooms and fallen logs. Foliage moves in coherent wind while trunks stay rooted. Rolling ground, exposed ridge faces, soil and moss patches, terrain-following shadows and shallow water basins give each habitat a different character. Streams have moving currents, foam, ripples and aquatic life.

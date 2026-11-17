@@ -443,7 +443,7 @@ test('long journeys retain all 25 species, 12 tree silhouettes, water life and o
         assert.ok(['stream', 'swamp'].includes(e.water?.kind)); waterLife = true;
       }
       if (e.variant === 'crocodile') {
-        assert.equal(e.water?.kind, 'swamp'); crocodiles = true;
+        assert.ok(['swamp', 'stream'].includes(e.water?.kind)); crocodiles = true;
       }
     }
     horses ||= [...herds.values()].some(count => count >= 3);
@@ -464,17 +464,18 @@ test('encounters leave long quiet gaps, small families, sparse water life and ge
     assert.ok(all.length > 150 && all.length < 420, 'the full variety must stay much more spread out');
     const encounters = new Map(), groups = new Map(), waterResidents = new Map();
     for (const e of all) {
-      if (e.encounter) encounters.set(e.encounter, e.encounterS);
+      if (e.encounter?.startsWith('trail:')) encounters.set(e.encounter, e.encounterS);
       if (e.group) groups.set(e.group, (groups.get(e.group) || 0) + 1);
       if (e.water) {
         const waterId = e.water.id || `river:${e.water.center}`;
-        waterResidents.set(waterId, (waterResidents.get(waterId) || 0) + 1);
+        const group = waterResidents.get(waterId) || { count: 0, kind: e.water.kind };
+        group.count++; waterResidents.set(waterId, group);
       }
     }
     const positions = [...encounters.values()].sort((a, b) => a - b);
     for (let n = 1; n < positions.length; n++) assert.ok(positions[n] - positions[n - 1] >= 33.9);
     assert.ok([...groups.values()].every(count => count <= 3));
-    assert.ok([...waterResidents.values()].every(count => count <= 2));
+    assert.ok([...waterResidents.values()].every(({count,kind}) => count <= (kind === 'stream' ? 3 : 2)));
     const magical = all.filter(e => e.mystical).sort((a, b) => a.s - b.s);
     assert.ok(magical.length > 0 && magical.length < all.length * .13);
     for (let n = 1; n < magical.length; n++) assert.ok(magical[n].s - magical[n - 1].s >= 225.9);

@@ -1,7 +1,7 @@
 // Pure journey rules and deterministic scenery. No DOM, timers or network state.
-import { SPECIES } from './bestiary.js?v=9';
-import { REST_TIMING, restEntryDuration } from './traveller.js?v=9';
-import { HOMES_BY_BIOME, WORK_BY_HOME } from './homesteads.js?v=9';
+import { SPECIES } from './bestiary.js?v=10';
+import { REST_TIMING, restEntryDuration } from './traveller.js?v=10';
+import { HOMES_BY_BIOME, WORK_BY_HOME } from './homesteads.js?v=10';
 const DEFAULT_SEED = 0x1d70a11d;
 const TAU = Math.PI * 2;
 const HOURS_PER_SECOND = 24 / 300;
@@ -441,6 +441,28 @@ function inHomesteadClearing(s, side, seed) {
   return false;
 }
 
+// Leave a readable patch of shore on the path-facing side of wetland pools
+// and around occasional river baskers. Otherwise tree crowns hide the entire
+// crocodile, even when its hit area is technically visible.
+function inCrocodileShoreClearing(s, side, seed) {
+  const x = pathAt(s, seed) + side;
+  for (const pool of swampPoolsAt(s, seed)) {
+    const shoreX = pool.x - pool.bank * (pool.rx + .72);
+    if (Math.abs(s - pool.s) < 5.8 && Math.abs(x - shoreX) < 5.5) return true;
+  }
+  const river = riverAt(s, seed);
+  if (river) {
+    const key = Math.floor(river.center * 10);
+    if (randomAt(seed, key, 916) < .5) {
+      const bank = randomAt(seed, key, 917) < .5 ? -1 : 1;
+      const shoreS = river.center + bank * (river.width * .5 + .9);
+      const shoreSide = (randomAt(seed, key, 918) < .5 ? -1 : 1) * (3.5 + randomAt(seed, key, 919) * 1.3);
+      if (Math.abs(s - shoreS) < 4.3 && Math.abs(side - shoreSide) < 4.2) return true;
+    }
+  }
+  return false;
+}
+
 function encounterAt(cell, seed) {
   const s = cell * ENCOUNTER_SPACING + 13 + randomAt(seed, cell, 701) * 14;
   // The opening has one fox. Everything after it uses the same spaced rules.
@@ -487,6 +509,10 @@ function makeChunk(index, seed) {
     (SPECIES[variant]?.scale || 1) * (.9 + random() * .18), extra);
   const plant = (s, side, far = false) => {
     if (inHomesteadClearing(s, side, seed)) return;
+    if (inCrocodileShoreClearing(s, side, seed)) {
+      if (random() < .23) add('grass', 'wild', s, side, .55 + random() * .3);
+      return;
+    }
     const biome = biomeAt(s, seed), x = pathAt(s, seed) + side;
     const water = waterAt(s, x, seed);
     if (water) {
@@ -585,6 +611,14 @@ function makeChunk(index, seed) {
       animal(kind, kind === 'heron' ? water.center - water.width / 2 - 1 : water.center,
         randomAt(seed, key, 905) < .5 ? -6.3 : 5.8, { water });
     }
+    // A conspicuous but solitary riverbank basker on some crossings. Its
+    // routine alternates between the sunny bank and the actual water channel.
+    if (randomAt(seed, key, 916) < .5) {
+      const bank = randomAt(seed, key, 917) < .5 ? -1 : 1;
+      const side = (randomAt(seed, key, 918) < .5 ? -1 : 1) * (3.5 + randomAt(seed, key, 919) * 1.3);
+      animal('crocodile', water.center + bank * (water.width * .5 + .9), side,
+        { water, waterBank: bank, encounter: `river-croc:${key}` });
+    }
     for (const bank of [-1, 1]) for (const side of [-7, 3.8, 8]) {
       const s = water.center + bank * (water.width / 2 + .8);
       if (s >= start && s < start + CHUNK_LENGTH) add('reeds', 'bank', s, side, 1);
@@ -598,11 +632,14 @@ function makeChunk(index, seed) {
     const side = water.x - pathAt(water.s, seed);
     const region = regionAt(water.s, seed), localPools = poolsInRegion(region, seed);
     const chosen = localPools[Math.floor(randomAt(seed, region, 911) * localPools.length)];
-    if (chosen?.id === water.id && randomAt(seed, region, 912) < .7) {
+    if (chosen?.id === water.id && randomAt(seed, region, 912) < .87) {
       const roll = randomAt(seed, region, 913);
-      const kind = roll < .55 ? 'crocodile' : roll < .75 ? 'heron' : roll < .9 ? 'otter' : 'duck';
+      const kind = roll < .77 ? 'crocodile' : roll < .87 ? 'heron' : roll < .95 ? 'otter' : 'duck';
       const bank = kind === 'crocodile' || kind === 'heron';
-      animal(kind, water.s, side + (bank ? water.bank * (water.rx + .6) : 0), { water });
+      // The inside shore faces the traveller; the far side is often hidden
+      // by the pond and wetland trees, making the animal nearly invisible.
+      const shore = kind === 'crocodile' ? -water.bank * (water.rx + .72) : water.bank * (water.rx + .6);
+      animal(kind, water.s, side + (bank ? shore : 0), { water });
     }
     if (randomAt(seed, Math.floor(water.s * 10), 914) < .16) {
       const kind = randomAt(seed, Math.floor(water.s), 915) < .5 ? 'frog' : 'dragonfly';

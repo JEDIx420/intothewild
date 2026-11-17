@@ -1,12 +1,12 @@
-import { Raster, rgb, hash, lerp, clamp, SIN, COS, R2 } from './pixel.js?v=9';
-import { pathAt, trailProfileAt, biomeAt, riverAt, waterAt, environment, TrailWorld } from './world.js?v=9';
-import { LandscapeTerrain } from './landscape.js?v=9';
-import { drawCreature } from './actors.js?v=9';
-import { drawTraveller, sampleTraveller } from './traveller.js?v=9';
-import { WildlifeDirector } from './wildlife.js?v=9';
-import { SPECIES } from './bestiary.js?v=9';
-import { makeTreeSprite, drawGroundPlant } from './vegetation.js?v=9';
-import { drawHome, drawResident, ResidentDirector, residentName, residentPosition } from './homesteads.js?v=9';
+import { Raster, rgb, hash, lerp, clamp, SIN, COS, R2 } from './pixel.js?v=10';
+import { pathAt, trailProfileAt, biomeAt, riverAt, waterAt, environment, TrailWorld } from './world.js?v=10';
+import { LandscapeTerrain } from './landscape.js?v=10';
+import { drawCreature } from './actors.js?v=10';
+import { drawTraveller, sampleTraveller } from './traveller.js?v=10';
+import { WildlifeDirector } from './wildlife.js?v=10';
+import { SPECIES } from './bestiary.js?v=10';
+import { makeTreeSprite, drawGroundPlant } from './vegetation.js?v=10';
+import { drawHome, drawResident, ResidentDirector, residentName, residentPosition } from './homesteads.js?v=10';
 
 const PAPER = rgb(250, 249, 246);
 export class ForestScene {
@@ -270,7 +270,8 @@ export class ForestScene {
       }
       const aquatic = e.kind === 'animal' && SPECIES[e.variant]?.habitat === 'water';
       const wet = aquatic || e.kind === 'lily' ? waterAt(s, x, this.seed) : null;
-      const z = aquatic ? (motion.waterLevel ?? wet?.level ?? e.water?.level ?? this.surface(s, x))
+      const z = aquatic || e.variant === 'crocodile' && motion?.swimming
+        ? (motion.waterLevel ?? wet?.level ?? e.water?.level ?? this.surface(s, x))
         : e.kind === 'lily' && (wet || e.water) ? (wet || e.water).level : this.surface(s, x);
       const point = r.project(x, y, z);
       const margin = e.kind === 'home' ? 90 : e.kind === 'tree' ? 35 : e.kind === 'animal' || e.kind === 'resident' ? 30 : 18;
@@ -306,7 +307,9 @@ export class ForestScene {
     for (const animal of active) {
       if (!animal.motion || Math.abs(animal.motion.s - state.distance) > 9) continue;
       const point = r.project(animal.x, animal.y, animal.z + .6 + animal.motion.hop);
-      r.cutaways.push({ x: point.sx, y: point.sy, d: point.d, rx: 15 * pixelScale, ry: 15 * pixelScale });
+      const crocodile = animal.e.variant === 'crocodile';
+      r.cutaways.push({ x: point.sx, y: point.sy, d: point.d,
+        rx: (crocodile ? 34 : 15) * pixelScale, ry: (crocodile ? 19 : 15) * pixelScale });
     }
     this.visibleAnimals.length = 0; this.visibleHomes.length = 0; this.hitTargets.length = 0;
     for (const { e, x, y, z, motion } of active) {
@@ -350,7 +353,7 @@ export class ForestScene {
         const y0 = Math.max(0, Math.floor(location.sy - extent)), y1 = Math.min(r.height - 1, Math.ceil(location.sy + extent));
         const before = [];
         for (let iy = y0; iy <= y1; iy += 2) for (let ix = x0; ix <= x1; ix += 2) before.push(r.depth[iy * r.width + ix]);
-        drawCreature(r, { x, y, z, time: state.elapsed, kind, seed: e.seed, scale: e.scale || 1, motion, groundAt: species.habitat === 'water' || species.habitat === 'air' ? null : (xx, yy) => this.surface(-yy, xx), resting: state.mode === 'snack', night: env.night > .4 });
+        drawCreature(r, { x, y, z, time: state.elapsed, kind, seed: e.seed, scale: e.scale || 1, motion, groundAt: species.habitat === 'water' || species.habitat === 'air' || kind === 'crocodile' && motion.swimming ? null : (xx, yy) => this.surface(-yy, xx), resting: state.mode === 'snack', night: env.night > .4 });
         const samples = []; let k = 0;
         for (let iy = y0; iy <= y1; iy += 2) for (let ix = x0; ix <= x1; ix += 2) {
           const index = iy * r.width + ix, depth = r.depth[index];

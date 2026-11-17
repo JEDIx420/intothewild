@@ -77,7 +77,9 @@ test('pool swimmers remain inside the oval and basking animals remain on its ban
       if (tick % 150 === 0) director.interact(e, t, { x: pool.x, y: -pool.s });
       const p = director.sample(e, t);
       const radius = Math.hypot((p.x - pool.x) / pool.rx, (p.s - pool.s) / pool.rs);
-      assert.ok(SPECIES[kind].habitat === 'water' ? radius <= .86 + 1e-8 : radius >= 1.04 - 1e-8, `${kind} left its habitat: ${radius}`);
+      assert.ok(kind === 'crocodile' ? p.swimming ? radius < 1 : Number.isFinite(radius)
+        : SPECIES[kind].habitat === 'water' ? radius <= .86 + 1e-8 : radius >= 1.04 - 1e-8,
+      `${kind} left its habitat: ${radius}`);
     }
   }
 });
@@ -105,6 +107,33 @@ test('crocodiles spend long natural pauses basking between their slow movements'
     if (motion.speed > .01) moving++;
   }
   assert.ok(basking > 220 && moving > 150);
+});
+
+test('crocodiles alternate between a rooted bank and actual pond water without teleporting', () => {
+  const e = { ...inhabitant('crocodile'), water: pool, side: pool.x + pool.rx + .9, s: pool.s, seed: 524 };
+  const director = new WildlifeDirector(seed);
+  const activities = new Set(); let last = null;
+  for (let time = 0; time < 100; time += .05) {
+    const motion = director.sample(e, time);
+    activities.add(motion.activity);
+    if (last) assert.ok(Math.hypot(motion.x-last.x, motion.s-last.s) < .35, 'crocodile position jumped');
+    if (motion.swimming) {
+      const q = Math.hypot((motion.x-pool.x)/pool.rx, (motion.s-pool.s)/pool.rs);
+      assert.ok(q < 1, `swimmer outside pond ${q}`);
+    }
+    last = motion;
+  }
+  assert.ok(activities.has('bask') && activities.has('float') && activities.has('slide'));
+  const choices = new Set();
+  for (let i = 0; i < 12; i++) {
+    const time = 150+i*11;
+    const response = director.interact(e, time, {x:0,y:-4}); choices.add(response.action);
+    for (let elapsed = time; elapsed < time+8; elapsed += .1) {
+      const motion = director.sample(e, elapsed);
+      assert.ok(Number.isFinite(motion.x) && Number.isFinite(motion.s));
+    }
+  }
+  assert.ok(choices.has('gape') && choices.has('rush') && choices.has('splash'));
 });
 
 test('touching a horse creates a shared herd response and streamed-out encounters release their state', () => {

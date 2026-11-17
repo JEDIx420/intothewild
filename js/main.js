@@ -1,7 +1,7 @@
-import { createJourney, stepJourney, setActivity, environment, serializeJourney, restoreJourney, trailProfileAt } from './world.js?v=9';
-import { ForestScene } from './scene.js?v=9';
-import { ForestAudio } from './audio.js?v=9';
-import { SPECIES } from './bestiary.js?v=9';
+import { createJourney, stepJourney, setActivity, environment, serializeJourney, restoreJourney, trailProfileAt } from './world.js?v=10';
+import { ForestScene } from './scene.js?v=10';
+import { ForestAudio } from './audio.js?v=10';
+import { SPECIES } from './bestiary.js?v=10';
 
 const SOUND_KEY = 'into-the-wild.sound.v2';
 const params = new URLSearchParams(location.search);

@@ -1,5 +1,5 @@
-import { pathAt, riverAt } from './world.js?v=9';
-import { SPECIES, REACTIONS } from './bestiary.js?v=9';
+import { pathAt, riverAt } from './world.js?v=10';
+import { SPECIES, REACTIONS } from './bestiary.js?v=10';
 
 const TAU = Math.PI * 2;
 const QUARTER = Math.PI / 2;
@@ -58,6 +58,39 @@ function arcLength(angle, along, across) {
   return turns * perimeter + sum * step / 3;
 }
 
+// One unhurried amphibious cycle: sunning, sliding in, drifting on the water,
+// and returning to the same bank. All coordinates stay in world space.
+function crocodileLife(e, elapsed, worldSeed) {
+  const water = e.water || riverAt(e.s, worldSeed), seed = finite(e.seed) >>> 0;
+  const t = Math.max(0, finite(elapsed));
+  if (!water) return null;
+  const river = water.kind !== 'swamp';
+  const bankS = river ? water.center + (e.waterBank || (e.s < water.center ? -1 : 1)) * (water.width * .5 + 1.05) : e.s;
+  const bankX = pathAt(bankS, worldSeed) + e.side;
+  const waterS = river ? water.center + (e.waterBank || 1) * water.width * .08 : water.s;
+  const waterX = river ? pathAt(waterS, worldSeed) + (e.side < 0 ? -1 : 1) * Math.max(2.5, Math.abs(e.side))
+    : water.x - (water.bank || 1) * water.rx * .32;
+  const phase = (t + random(seed, 202) * 34) % 34;
+  const entering = phase >= 15 && phase < 19, leaving = phase >= 29 && phase < 33;
+  const wet = phase >= 19 && phase < 29;
+  const progress = entering ? smooth((phase - 15) / 4) : wet ? 1 : leaving ? 1 - smooth((phase - 29) / 4) : 0;
+  const angle = Math.max(0, phase - 19) * .5 + random(seed, 203) * TAU;
+  const swimBlend = wet ? smooth((phase - 19) / 1.4) * smooth((29 - phase) / 1.4) : 0;
+  const sx = Math.sin(angle) * (river ? water.width * .13 : Math.min(water.rs * .27, 1.8)) * swimBlend;
+  const dx = Math.cos(angle) * (river ? .38 : Math.min(water.rx * .2, 1.1)) * swimBlend;
+  const s = bankS + (waterS - bankS) * progress + sx * progress;
+  const x = bankX + (waterX - bankX) * progress + dx * progress;
+  const speed = wet ? .19 : entering || leaving ? .72 : 0;
+  return { s, x, y: -s, side: x - pathAt(s, worldSeed),
+    yaw: wet ? angle + Math.PI * .5 : Math.atan2(-(waterS - bankS), waterX - bankX),
+    speed, gait: t * speed * 1.5, hop: 0, graze: 0, rear: 0, alert: 0, dive: 0,
+    splash: (entering || leaving) && progress > .5 && progress < .92 ? .24 : 0,
+    activity: wet ? 'float' : entering || leaving ? 'slide' : 'bask',
+    swimming: wet || progress > .8, waterLevel: water.level,
+    submerge: wet ? .1 + Math.sin(t * .8 + seed) * .025 : 0,
+  };
+}
+
 /**
  * A repeatable, bounded little life around a creature's spawn.
  * World coordinates use +s along the trail, -Y in the renderer. Elapsed game
@@ -69,6 +102,7 @@ export function sampleWildlife(entity, elapsed = 0, worldSeed) {
   const type = TYPES[kind] || TYPES.deer;
   const seed = finite(e.seed) >>> 0;
   const t = Math.max(0, finite(elapsed));
+  if (kind === 'crocodile' && e.water) return crocodileLife(e, t, worldSeed);
   const along = type.along * (.9 + random(seed, 11) * .2);
   const across = type.across * (.9 + random(seed, 12) * .2);
   const move = type.move * (.94 + random(seed, 13) * .12);
@@ -173,6 +207,7 @@ export function sampleWildlife(entity, elapsed = 0, worldSeed) {
 }
 
 const MOTIONS = {
+  rush: { duration: 2.25, distance: 2, recovery: 3.5 },
   flee: { duration: 3.2, distance: 5.6, recovery: 5.5 },
   bound: { duration: 3.1, distance: 4.5, recovery: 4.8 },
   stepAway: { duration: 4, distance: 2.2, recovery: 4.5 },
@@ -187,6 +222,15 @@ const MOTIONS = {
 
 function constrainWater(pose, entity, worldSeed) {
   const water = entity.water || riverAt(entity.s, worldSeed) || riverAt(pose.s, worldSeed);
+  if (entity.variant === 'crocodile' && water) {
+    pose.swimming = water.kind === 'swamp'
+      ? Math.hypot((pose.x-water.x)/water.rx, (pose.s-water.s)/water.rs) < .96
+      : Math.abs(pose.s-water.center) < water.width * .45;
+    pose.y = -pose.s;
+    pose.side = pose.x - pathAt(pose.s, worldSeed);
+    pose.waterLevel = water.level;
+    return pose;
+  }
   if (SPECIES[entity.variant]?.habitat === 'water' && water) {
     if (water.kind === 'swamp') {
       const dx = (pose.x - water.x) / water.rx, ds = (pose.s - water.s) / water.rs;
@@ -274,6 +318,23 @@ export class WildlifeDirector {
     if (reaction.action === 'jump') { pose.hop += Math.max(0, Math.sin(Math.min(1, u / .72) * Math.PI)) * 1.4 * (1 - release); pose.splash = u > .65 ? Math.sin((u - .65) / .35 * Math.PI) : 0; }
     if (['dive', 'splash'].includes(reaction.action)) { pose.dive = reaction.action === 'dive' ? envelope : 0; pose.splash = envelope; }
     if (reaction.action === 'gape') pose.gape = envelope;
+    if (entity.variant === 'crocodile' && reaction.action === 'rush') {
+      const water = entity.water;
+      if (water) {
+        const targetS = water.kind === 'swamp' ? water.s : water.center;
+        const targetX = water.kind === 'swamp' ? water.x - (water.bank || 1) * water.rx * .25
+          : pathAt(targetS, worldSeed) + (entity.side < 0 ? -1 : 1) * Math.max(2.5, Math.abs(entity.side));
+        const dive = smooth(u / .75) * (1 - release);
+        pose.s = blend(from.s + (targetS - from.s) * dive, base.s);
+        pose.x = blend(from.x + (targetX - from.x) * dive, base.x);
+        pose.y = -pose.s;
+        pose.swimming = dive > .72 || base.swimming;
+        pose.submerge = dive * .1;
+        pose.splash = Math.sin(Math.PI * smooth(u)) * (1 - release);
+        pose.speed = Math.max(pose.speed, dive > .1 && dive < .95 ? 1.3 : 0);
+      }
+    }
+    if (entity.variant === 'crocodile' && reaction.action === 'splash') pose.splash = Math.max(pose.splash, envelope);
     if (release > 0) {
       const delta = Math.atan2(Math.sin(base.yaw - pose.yaw), Math.cos(base.yaw - pose.yaw));
       pose.yaw += delta * release;
@@ -289,7 +350,7 @@ export class WildlifeDirector {
     const heading = distance > .05 ? Math.atan2(from.y - py, from.x - px) : from.yaw;
     let amount = config.distance;
     if (selected.action === 'approach') amount = -Math.min(Math.abs(amount), Math.max(0, distance - 1.9));
-    if (SPECIES[entity.variant]?.habitat === 'water') amount *= .55;
+    if (SPECIES[entity.variant]?.habitat === 'water' || entity.variant === 'crocodile') amount *= .55;
     if (['frog', 'butterfly', 'dragonfly', 'fish', 'squirrel'].includes(entity.variant)) amount *= .65;
     this.reactions.set(id, { ...config, from, action: selected.action, start: elapsed + stagger,
       dx: Math.cos(heading) * amount, dy: Math.sin(heading) * amount, distance: amount,
